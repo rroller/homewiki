@@ -218,9 +218,10 @@ function renderTree(){
     for(const child of node.children.values()){
       const row=document.createElement('div');row.className='tree-row'+(child.path===state.page?.path?' active':'');row.style.paddingLeft=(depth*15+3)+'px';
       const toggle=document.createElement('button');toggle.className='tree-toggle';toggle.type='button';row.append(toggle);
-      let collapsed=stored('homewiki:folder:'+child.path)==='closed';
+      const collapsible=depth===0&&child.children.size>0;
+      let collapsed=collapsible&&stored('homewiki:folder:'+child.path)==='closed';
       const sub=document.createElement('div');
-      if(child.children.size){toggle.textContent=collapsed?'▸':'▾';toggle.setAttribute('aria-label','Toggle '+child.name);toggle.setAttribute('aria-expanded',String(!collapsed));sub.hidden=collapsed;toggle.onclick=()=>{collapsed=!collapsed;sub.hidden=collapsed;toggle.textContent=collapsed?'▸':'▾';toggle.setAttribute('aria-expanded',String(!collapsed));setStored('homewiki:folder:'+child.path,collapsed?'closed':'open');};}else{toggle.textContent='';toggle.disabled=true;toggle.tabIndex=-1;}
+      if(collapsible){toggle.textContent=collapsed?'▸':'▾';toggle.setAttribute('aria-label','Toggle '+child.name);toggle.setAttribute('aria-expanded',String(!collapsed));sub.hidden=collapsed;toggle.onclick=()=>{collapsed=!collapsed;sub.hidden=collapsed;toggle.textContent=collapsed?'▸':'▾';toggle.setAttribute('aria-expanded',String(!collapsed));setStored('homewiki:folder:'+child.path,collapsed?'closed':'open');};}else{toggle.textContent='';toggle.disabled=true;toggle.tabIndex=-1;}
       if(child.page){const a=document.createElement('a');a.href=pageURL(child.path);a.innerHTML='<span>'+esc(child.name)+'</span>';a.title=child.path;if(child.path===state.page?.path)a.setAttribute('aria-current','page');row.append(a);}else{const label=document.createElement('span');label.className='folder-name';label.textContent=child.name;row.append(label);}
       parent.append(row);if(child.children.size){parent.append(sub);render(sub,child,depth+1);}
     }
@@ -268,7 +269,11 @@ function paintPage(){
   const page=state.page;if(!page)return;
   $('more').hidden=false;$('page-footer').hidden=false;$('recently-edited').removeAttribute('aria-current');
   $('last-edited').dateTime=page.modified;$('last-edited').textContent='Last edited '+editDate(page.modified);$('last-edited').title=new Date(page.modified).toString();
-  $('page-title').textContent=page.path.split('/').pop();renderBreadcrumb(page.path);document.title=page.path.split('/').pop()+' · Homewiki';
+  const name=page.path.split('/').pop();
+  const firstLine=page.content.replace(/\r\n/g,'\n').split('\n').find(line=>line.trim())||'';
+  const heading=firstLine.match(/^#\s+(.+)$/);
+  if(heading&&heading[1].trim())$('page-title').innerHTML=inline(heading[1]);else $('page-title').textContent=name;
+  renderBreadcrumb(page.path);document.title=($('page-title').textContent.trim()||name)+' · Homewiki';
   $('content').innerHTML=markdown(page.content,true);$('word-count').textContent=page.content.trim()?page.content.trim().split(/\s+/).length+' words':'0 words';
   $('reader').hidden=state.editing;$('editor').hidden=!state.editing;$('edit-page').hidden=state.editing;
   renderTree();syncUploadControls();

@@ -2,6 +2,7 @@ import concurrent.futures
 import base64
 import importlib.util
 import json
+import struct
 from pathlib import Path
 import tempfile
 import threading
@@ -131,6 +132,16 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(self.request('/api/delete',page,headers)[0],200)
         status,raw,_=self.request('/api/trash');self.assertEqual(len(json.loads(raw)),1)
         self.assertEqual(self.request('/api/restore',{'id':json.loads(raw)[0]['id']},headers)[0],200)
+    def test_favicon_assets(self):
+        status,png,headers=self.request('/favicon.png')
+        self.assertEqual(status,200);self.assertEqual(headers['Content-Type'],'image/png')
+        self.assertEqual(png[:8],b'\x89PNG\r\n\x1a\n')
+        self.assertEqual(struct.unpack('>II',png[16:24]),(128,128))
+        status,ico,headers=self.request('/favicon.ico')
+        self.assertEqual(status,200);self.assertEqual(headers['Content-Type'],'image/x-icon')
+        self.assertEqual(struct.unpack('<HHH',ico[:6]),(0,1,1))
+        self.assertEqual(ico[22:],png)
+
     def test_private_request_guards(self):
         self.assertEqual(self.request('/api/pages',headers={'Host':'attacker.example'})[0],403)
         self.assertEqual(self.request('/api/pages',headers={'Origin':'https://attacker.example'})[0],403)

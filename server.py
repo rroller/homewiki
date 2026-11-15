@@ -258,10 +258,10 @@ class Handler(BaseHTTPRequestHandler):
                     return
                 elif url.path == '/api/trash':
                     data = store.deleted()
-                elif url.path in ('/', '/app.js', '/style.css', '/recently-edited') or url.path.startswith('/page/'):
-                    file = STATIC / {'/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css'}.get(url.path, 'index.html')
-                    kind = {'html': 'text/html', 'js': 'text/javascript', 'css': 'text/css'}[file.suffix[1:]]
-                    self.reply(200, file.read_bytes(), kind + '; charset=utf-8')
+                elif url.path in ('/', '/app.js', '/style.css', '/favicon.png', '/favicon.ico', '/recently-edited') or url.path.startswith('/page/'):
+                    file = STATIC / {'/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/favicon.png': 'favicon.png', '/favicon.ico': 'favicon.ico'}.get(url.path, 'index.html')
+                    kind = {'html': 'text/html', 'js': 'text/javascript', 'css': 'text/css', 'png': 'image/png', 'ico': 'image/x-icon'}[file.suffix[1:]]
+                    self.reply(200, file.read_bytes(), kind + ('; charset=utf-8' if kind.startswith('text/') else ''))
                     return
                 else:
                     raise Problem(404, 'Not found')

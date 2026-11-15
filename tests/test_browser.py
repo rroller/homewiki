@@ -56,9 +56,9 @@ class BrowserTests(unittest.TestCase):
         # Internal links, full-text search, rename/move, soft deletion and restore.
         p.locator('#content a').click();expect(p.locator('#page-title')).to_have_text('Completed games')
         p.locator('#search-open').click();p.get_by_role('searchbox').fill('useful');p.locator('.result').filter(has_text='Projects/My notebook').click();expect(p.locator('#page-title')).to_have_text('My notebook')
-        p.locator('#more').click();p.locator('#rename-page').click();p.locator('#page-path').fill('Projects/Renamed');p.get_by_role('button',name='Rename page',exact=True).click();expect(p.locator('#page-title')).to_have_text('Renamed')
+        p.locator('#more').click();p.locator('#rename-page').click();p.locator('#page-path').fill('Projects/Renamed');p.get_by_role('button',name='Rename page',exact=True).click();expect(p.locator('#page-title')).to_have_text('My notebook');expect(p.locator('#breadcrumb')).to_have_text('Projects/Renamed')
         p.locator('#more').click();p.locator('#delete-page').click();p.get_by_role('button',name='Move to trash',exact=True).click();expect(p.locator('#modal')).not_to_be_visible()
-        p.locator('#trash-open').click();p.locator('.result').filter(has_text='Projects/Renamed').click();expect(p.locator('#page-title')).to_have_text('Renamed')
+        p.locator('#trash-open').click();p.locator('.result').filter(has_text='Projects/Renamed').click();expect(p.locator('#page-title')).to_have_text('My notebook');expect(p.locator('#breadcrumb')).to_have_text('Projects/Renamed')
         # External changes cannot overwrite an unsaved draft.
         p.locator('#edit-page').click();p.locator('#source').fill('# Local draft\nMy local changes')
         self.store.path('Projects/Renamed').write_text('# External edit\nChanged outside the app')
@@ -69,7 +69,7 @@ class BrowserTests(unittest.TestCase):
         p.get_by_role('button',name='Use merged draft').click();p.locator('#save-page').click();expect(p.locator('#editor')).to_be_hidden()
         self.assertIn('Merged',self.store.read('Projects/Renamed')['content'])
         # Two independent browser tabs get a revision conflict and preserve their drafts.
-        other=self.context.new_page();other.goto(self.url+'/#/page/Projects%2FRenamed');expect(other.locator('#page-title')).to_have_text('Renamed')
+        other=self.context.new_page();other.goto(self.url+'/#/page/Projects%2FRenamed');expect(other.locator('#page-title')).to_have_text('Merged')
         p.locator('#edit-page').click();other.locator('#edit-page').click();p.locator('#source').fill('# First tab');other.locator('#source').fill('# Second tab')
         p.locator('#save-page').click();expect(p.locator('#editor')).to_be_hidden();other.locator('#save-page').click();expect(other.locator('#notice')).to_contain_text('changed on disk')
         other.reload();expect(other.locator('#source')).to_have_value('# Second tab');expect(other.locator('#notice')).to_contain_text('file has changed')
@@ -256,9 +256,9 @@ A paragraph after the lists.
         p.locator('#edit-page').click();p.locator('#source').fill('# A draft to keep')
         brand=p.locator('#brand-home');expect(brand).to_have_attribute('href','/page/Home')
         brand.focus();p.keyboard.press('Enter')
-        expect(p).to_have_url(self.url+'/page/Home');expect(p.locator('#page-title')).to_have_text('Home')
+        expect(p).to_have_url(self.url+'/page/Home');expect(p.locator('#page-title')).to_have_text('A home for your thoughts')
         p.go_back();expect(p.locator('#source')).to_have_value('# A draft to keep')
-        p.locator('#brand-home').click();expect(p.locator('#page-title')).to_have_text('Home')
+        p.locator('#brand-home').click();expect(p.locator('#page-title')).to_have_text('A home for your thoughts')
 
     def test_incomplete_table_rows_render_empty_cells(self):
         p=self.page
@@ -354,6 +354,84 @@ After the table.
         expect(p.locator('#content th button a')).to_have_count(0)
         p.locator('#content').get_by_role('button',name='Completed',exact=True).click()
         expect(p.locator('#content th').first).to_have_attribute('aria-sort','ascending')
+
+    def test_leading_markdown_heading_controls_visible_title(self):
+        p=self.page
+        p.locator('#edit-page').click();p.locator('#source').fill('# My **dashboard**\n\n## First section\n\nA note.')
+        p.locator('#tab-preview').click();expect(p.locator('#preview h1')).to_have_text('My dashboard')
+        p.locator('#save-page').click();expect(p.locator('#editor')).to_be_hidden()
+        expect(p.locator('#page-title')).to_have_text('My dashboard')
+        expect(p.locator('#page-title strong')).to_have_text('dashboard')
+        expect(p).to_have_title('My dashboard · Homewiki')
+        expect(p.locator('#content h1')).to_have_count(0)
+        expect(p.locator('#content h2')).to_have_text('First section')
+        expect(p.locator('#breadcrumb')).to_have_text('Home')
+        expect(p.locator('#tree a[aria-current=page]')).to_have_text('Home')
+        self.assertEqual(self.store.read('Home')['content'],'# My **dashboard**\n\n## First section\n\nA note.')
+        p.reload();expect(p.locator('#page-title')).to_have_text('My dashboard')
+        # Changing the level makes it a content heading, and removing it falls back to the filename.
+        p.locator('#edit-page').click();p.locator('#source').fill('## A section instead\n\nA note.');p.locator('#save-page').click()
+        expect(p.locator('#page-title')).to_have_text('Home');expect(p.locator('#content h2')).to_have_text('A section instead')
+        p.locator('#edit-page').click();p.locator('#source').fill('An introduction.\n\n# A later heading');p.locator('#save-page').click()
+        expect(p.locator('#page-title')).to_have_text('Home');expect(p.locator('#content h1')).to_have_text('A later heading')
+        # Leading blank lines are fine, and heading text remains escaped.
+        p.locator('#edit-page').click();p.locator('#source').fill('\n\n# <script>unsafe</script>\n\nBody');p.locator('#save-page').click()
+        expect(p.locator('#page-title')).to_have_text('<script>unsafe</script>')
+        expect(p.locator('#page-title script')).to_have_count(0)
+        p.locator('#edit-page').click();p.locator('#source').fill('#   \n\nBody');p.locator('#save-page').click()
+        expect(p.locator('#page-title')).to_have_text('Home')
+
+    def test_favicon_and_compact_sidebar_toolbar(self):
+        p=self.page
+        expect(p.locator('link[rel=icon][href="/favicon.png"]')).to_have_count(1)
+        expect(p.locator('link[rel=icon][href="/favicon.ico"]')).to_have_count(1)
+        p.locator('body').evaluate("body=>{const image=document.createElement('img');image.id='favicon-check';image.hidden=true;image.src='/favicon.png';body.append(image);}")
+        expect(p.locator('#favicon-check')).to_have_js_property('naturalWidth',128)
+        p.locator('#favicon-check').evaluate('node=>node.remove()')
+        toolbar=p.locator('.sidebar-tools')
+        expect(toolbar.get_by_role('button',name='New page',exact=True)).to_be_visible()
+        expect(toolbar.get_by_role('link',name='Recently edited',exact=True)).to_be_visible()
+        self.assertEqual(p.locator('#new-page').inner_text(),'')
+        self.assertEqual(p.locator('#recently-edited').inner_text(),'')
+        p.locator('#new-page').click();expect(p.locator('#modal-title')).to_have_text('Create a page');p.locator('#modal-close').click()
+        p.locator('#recently-edited').click();expect(p.locator('#page-title')).to_have_text('Recently edited')
+        expect(p.locator('#recently-edited')).to_have_attribute('aria-current','page')
+        for width in [1440,1000,800,390]:
+            p.set_viewport_size({'width':width,'height':900})
+            p.reload()
+            if width<721:p.locator('#expand').click()
+            sidebar=p.locator('#sidebar').bounding_box();brand=p.locator('.brand').bounding_box()
+            buttons=toolbar.locator('button,a').all()
+            self.assertEqual(len(buttons),4)
+            previous=None
+            for button in buttons:
+                box=button.bounding_box()
+                self.assertGreaterEqual(box['x'],brand['x'])
+                self.assertLessEqual(box['x']+box['width'],sidebar['x']+sidebar['width'])
+                if previous:self.assertGreaterEqual(box['x'],previous['x']+previous['width'])
+                previous=box
+            self.assertTrue(p.evaluate('document.documentElement.scrollWidth<=innerWidth'))
+    def test_only_top_level_page_groups_collapse(self):
+        p=self.page
+        self.store.save('Home/Unraid','# Unraid')
+        self.store.save('Home/Unraid/DDNS','# DDNS')
+        p.evaluate("localStorage.setItem('homewiki:folder:Home/Unraid','closed')")
+        p.reload()
+        root=p.locator('#tree').get_by_role('button',name='Toggle Home',exact=True)
+        expect(root).to_have_attribute('aria-expanded','true')
+        expect(p.locator('#tree').get_by_role('button',name='Toggle Unraid',exact=True)).to_have_count(0)
+        child=p.locator('#tree').get_by_role('link',name='DDNS',exact=False)
+        expect(child).to_be_visible()
+        root.click();expect(child).not_to_be_visible()
+        p.reload();expect(root).to_have_attribute('aria-expanded','false');expect(child).not_to_be_visible()
+        root.click();expect(child).to_be_visible()
+        child.click();expect(p.locator('#page-title')).to_have_text('DDNS')
+        # Nested items remain readable inside a modestly denser tree.
+        visible=p.locator('#tree .tree-row').filter(visible=True)
+        boxes=[row.bounding_box() for row in visible.all()]
+        for first,second in zip(boxes,boxes[1:]):
+            self.assertGreaterEqual(second['y'],first['y']+first['height'])
+            self.assertLessEqual(second['y']-first['y'],40)
 
     def test_recent_edits_and_footer(self):
         p=self.page
