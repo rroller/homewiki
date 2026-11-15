@@ -66,6 +66,8 @@ Docker deployments can set `HOMEWIKI_ALLOWED_HOSTS` to the permitted IP/hostname
 
 ## Use the wiki
 
+A leading `# Heading` supplies the visible page title and browser-tab title. Editing it updates the rendered title after saving. The heading is shown once at the top, rather than duplicated in the article. Without a leading H1, the filename supplies the page title and Markdown headings render in the article. Page paths, sidebar labels, and internal links continue to use the filename; use Rename / move to change them.
+
 Create nested pages with paths such as `Games/Completed games`. A folder may also have its own page: `Games.md` beside `Games/Completed games.md`.
 
 Use `[[Games/Completed games]]` or `[[Games/Completed games|Finished games]]` to link from the wiki root. The editor's page-link picker inserts these links. Ordinary Markdown links resolve relative to the current page's folder; begin the target with `/` for a wiki-root-relative link. Paths are case-sensitive. Missing pages offer to create them.

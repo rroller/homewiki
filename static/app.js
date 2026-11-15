@@ -268,7 +268,11 @@ function paintPage(){
   const page=state.page;if(!page)return;
   $('more').hidden=false;$('page-footer').hidden=false;$('recently-edited').removeAttribute('aria-current');
   $('last-edited').dateTime=page.modified;$('last-edited').textContent='Last edited '+editDate(page.modified);$('last-edited').title=new Date(page.modified).toString();
-  $('page-title').textContent=page.path.split('/').pop();renderBreadcrumb(page.path);document.title=page.path.split('/').pop()+' · Homewiki';
+  const name=page.path.split('/').pop();
+  const firstLine=page.content.replace(/\r\n/g,'\n').split('\n').find(line=>line.trim())||'';
+  const heading=firstLine.match(/^#\s+(.+)$/);
+  if(heading&&heading[1].trim())$('page-title').innerHTML=inline(heading[1]);else $('page-title').textContent=name;
+  renderBreadcrumb(page.path);document.title=($('page-title').textContent.trim()||name)+' · Homewiki';
   $('content').innerHTML=markdown(page.content,true);$('word-count').textContent=page.content.trim()?page.content.trim().split(/\s+/).length+' words':'0 words';
   $('reader').hidden=state.editing;$('editor').hidden=!state.editing;$('edit-page').hidden=state.editing;
   renderTree();syncUploadControls();
