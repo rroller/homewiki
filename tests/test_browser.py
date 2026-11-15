@@ -1,6 +1,7 @@
 """Optional browser integration tests. Install playwright and its Chromium to run."""
 import importlib.util
 import os
+import re
 from pathlib import Path
 import tempfile
 import threading
@@ -73,6 +74,79 @@ class BrowserTests(unittest.TestCase):
         p.locator('#save-page').click();expect(p.locator('#editor')).to_be_hidden();other.locator('#save-page').click();expect(other.locator('#notice')).to_contain_text('changed on disk')
         other.reload();expect(other.locator('#source')).to_have_value('# Second tab');expect(other.locator('#notice')).to_contain_text('file has changed')
         other.close()
+    def image_drop(self, target='#main', mime='image/png', name='Screenshot.png'):
+        transfer=self.page.evaluate_handle("""({mime,name})=>{
+            const canvas=document.createElement('canvas');canvas.width=12;canvas.height=8;
+            const context=canvas.getContext('2d');context.fillStyle='#397361';context.fillRect(0,0,12,8);
+            const raw=atob(canvas.toDataURL(mime).split(',')[1]);const bytes=Uint8Array.from(raw,c=>c.charCodeAt(0));
+            const transfer=new DataTransfer();transfer.items.add(new File([bytes],name,{type:mime}));return transfer;
+        }""",{'mime':mime,'name':name})
+        self.page.locator(target).dispatch_event('drop',{'dataTransfer':transfer})
+        transfer.dispose()
+    def test_dragged_image_preview_save_and_restore(self):
+        p=self.page
+        p.locator('#tree').get_by_role('link',name='Completed games',exact=False).click()
+        expect(p.locator('#page-title')).to_have_text('Completed games')
+        self.image_drop()
+        expect(p.locator('#editor')).to_be_visible()
+        expect(p.locator('#source')).to_have_value(re.compile(r'!\[Screenshot\]\(/uploads/[0-9a-f]{32}\.png\)'))
+        p.locator('#tab-preview').click();expect(p.locator('#preview img')).to_have_attribute('alt','Screenshot')
+        expect(p.locator('#preview img')).to_have_js_property('naturalWidth',12)
+        image=p.locator('#preview img').get_attribute('src')
+        p.locator('#save-page').click();expect(p.locator('#content img')).to_have_attribute('src',image)
+        p.reload();expect(p.locator('#content img')).to_have_attribute('src',image)
+        expect(p.locator('#content img')).to_have_js_property('naturalWidth',12)
+        self.assertEqual(self.store.read_image(image.split('/')[-1])[1],'image/png')
+        # Reader drops start the editor, and multiple formats work.
+        self.image_drop(mime='image/jpeg',name='Photo.jpg')
+        expect(p.locator('#source')).to_have_value(re.compile(r'/uploads/[0-9a-f]{32}\.jpg'))
+        p.locator('#save-page').click();expect(p.locator('#content img')).to_have_count(2)
+        # The picker and clipboard share the same upload path.
+        p.locator('#edit-page').click()
+        data=self.store.read_image(image.split('/')[-1])[0]
+        p.locator('#image-files').set_input_files({'name':'Picked.png','mimeType':'image/png','buffer':data})
+        expect(p.locator('#source')).to_have_value(re.compile(r'!\[Picked\]\(/uploads/'))
+        p.locator('#source').evaluate("""(source,bytes)=>{
+            const transfer=new DataTransfer();transfer.items.add(new File([new Uint8Array(bytes)],'Pasted.png',{type:'image/png'}));
+            source.dispatchEvent(new ClipboardEvent('paste',{clipboardData:transfer,bubbles:true,cancelable:true}));
+        }""",list(data))
+        expect(p.locator('#source')).to_have_value(re.compile(r'!\[Pasted\]\(/uploads/'))
+        p.locator('#save-page').click();expect(p.locator('#content img')).to_have_count(4)
+        # Remote and executable image sources never become image requests.
+        html=p.evaluate("inline('![x](https://attacker.example/pixel.png) ![x](javascript:alert) ![x](/uploads/a.svg)')")
+        self.assertNotIn('<img',html)
+    def test_upload_completion_after_navigation_and_failure(self):
+        p=self.page
+        held=[]
+        p.route('**/api/upload',lambda route:held.append(route))
+        self.image_drop()
+        expect(p.locator('#save-page')).to_be_disabled()
+        p.locator('.header-home').click()
+        # Navigate to a different page while the upload is still pending.
+        p.locator('#tree').get_by_role('link',name='Games I own',exact=False).click()
+        expect(p.locator('#page-title')).to_have_text('Games I own')
+        self.assertEqual(len(held),1)
+        held.pop().continue_()
+        p.locator('.header-home').click()
+        expect(p.locator('#source')).to_have_value(re.compile(r'!\[Screenshot\]\(/uploads/'))
+        self.assertNotIn('homewiki-upload:',p.locator('#source').input_value())
+        original=p.locator('#source').input_value()
+        p.unroute('**/api/upload')
+        p.route('**/api/upload',lambda route:route.fulfill(status=500,content_type='application/json',body='{"error":"Disk full"}'))
+        self.image_drop()
+        expect(p.locator('#toast')).to_contain_text('Disk full')
+        self.assertIn(original.strip(),p.locator('#source').input_value())
+        self.assertNotIn('homewiki-upload:',p.locator('#source').input_value())
+        expect(p.locator('#toast')).to_contain_text('Disk full')
+        expect(p.locator('#save-page')).to_be_enabled()
+
+    def test_interrupted_image_upload_recovers_text_draft(self):
+        p=self.page
+        p.locator('#edit-page').click();p.locator('#source').fill('# My preserved text\n\n![Uploading photo…](homewiki-upload:interrupted-123)')
+        p.reload();expect(p.locator('#source')).to_have_value('# My preserved text\n\n')
+        expect(p.locator('#notice')).to_contain_text('interrupted')
+        expect(p.locator('#save-page')).to_be_enabled()
+
     def test_recent_edits_and_footer(self):
         p=self.page
         now=time.time()

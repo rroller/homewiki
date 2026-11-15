@@ -4,7 +4,7 @@ A lightweight, locally hosted personal wiki. Pages are ordinary UTF-8 Markdown f
 
 - Collapsible sidebar, light/dark themes, and clean page URLs with clickable breadcrumbs.
 - Create, edit, rename/move, and delete pages in the browser.
-- Markdown editor with preview, internal wiki links, a page-link picker, and full-text search.
+- Markdown editor with preview, internal wiki links, a page-link picker, full-text search, and image uploads by drop, paste, or file picker.
 - Browser draft recovery, revision-based conflict detection, and a manual merge view.
 - Recoverable deleted pages, last-edit dates, and a Recently edited index.
 - Docker Compose and an optional Unraid deployment script with persistent storage.
@@ -78,7 +78,15 @@ Delete moves a page into Recently deleted. Children remain accessible. Restore i
 
 The footer uses the Markdown file's modification time for its last-edit date, displayed in the browser's local time zone. Recently edited (`/recently-edited`) is a generated index ordered newest first. It includes external file edits, excludes deleted pages, and is not itself an editable Markdown file. Renaming or restoring a page preserves its content edit date.
 
-The small Markdown renderer supports headings, paragraphs, bold, emphasis, strikethrough, inline/fenced code, basic lists, read-only task lists, blockquotes, tables, horizontal rules, and links. It is not full CommonMark: nested list formatting, inline images, raw HTML, and extensions are not rendered. HTML appears as text; remote images are not requested. External HTTP(S) links open separately when clicked.
+## Add images
+
+Drop one or more images onto an open page, paste a screenshot into the editor, or choose **Add image**. A drop on a reading page opens its editor. PNG, JPEG, GIF, and WebP are supported, up to 10 MiB per image. SVG and other file types are rejected. File signatures determine the stored type; client filenames are never used as storage paths.
+
+Uploads insert ordinary Markdown such as `![Screenshot](/uploads/<unique-id>.png)` at the cursor. Images appear in Preview and saved pages; click one to open its original size. Save the page to commit the image links. Save waits until that page's uploads finish. You can continue typing or navigate to another page while an upload finishes; the result updates the original browser draft. If a reload interrupts an upload, the text draft is recovered and the unfinished upload placeholder is removed with a notice to try again.
+
+Images are ordinary files in `data/uploads/`, on the same persistent volume as the pages. Absolute upload URLs keep working after moving/renaming a page. Images are retained when a page is deleted, restored, or its draft is discarded, so recoverable pages and shared links do not lose their files. There is no automatic cleanup of unused uploads. Include `uploads/` in data backups. Uploaded assets are excluded from Git and from the image build context. External image URLs and raw HTML are not rendered or requested.
+
+The small Markdown renderer supports headings, paragraphs, bold, emphasis, strikethrough, inline/fenced code, basic lists, read-only task lists, blockquotes, tables, horizontal rules, and links. It is not full CommonMark: nested list formatting, raw HTML, and extensions are not rendered. HTML appears as text; remote images are not requested. External HTTP(S) links open separately when clicked.
 
 ## Storage and durability
 
@@ -89,6 +97,8 @@ data/
     Games.md
     Games/
       Completed games.md
+  uploads/
+    <unique-id>.png
   .trash/<unique-id>/
     page.md
     metadata.json
@@ -98,7 +108,7 @@ data/
 
 **Keep personal wiki content outside Git.** This repository contains application source and documentation only. The ignore rules exclude Markdown except the explicitly allowed root documentation, plus runtime data, trash, backups, and local configuration. The Docker build context allows only runtime source. For a custom data directory, prefer a path outside this checkout. Never force-add wiki data or backup files.
 
-You can edit UTF-8 `.md` files with any text editor. The app discovers them on refresh and polls every ten seconds while visible. Hidden names, traversal paths, and symlinks are rejected. Each page/request is limited to approximately 2 MiB. Search scans the files and is intended for a small personal collection.
+You can edit UTF-8 `.md` files with any text editor. The app discovers them on refresh and polls every ten seconds while visible. Hidden names, traversal paths, and symlinks are rejected. Each Markdown page/JSON request is limited to approximately 2 MiB; each image upload is limited to 10 MiB. Search scans the files and is intended for a small personal collection.
 
 Saves flush a temporary file and atomically replace the page. A cross-process advisory lock serializes UI mutations. SHA-256 revisions reject stale saves, renames, and deletes. The conflict dialog shows the current file, your draft, an editable merged draft, and a draft download. Accepting a merge updates its base revision; Save checks again. External editors do not acquire the advisory lock, so avoid simultaneous external writes during a UI save.
 
@@ -128,4 +138,4 @@ python -m playwright install --with-deps chromium
 python -m unittest discover -s tests -v
 ```
 
-The suite covers file storage and CRUD, destination protection, external and concurrent edits, path safety, private request guards, direct page routes, editor/preview/link/search flows, draft recovery, conflict merging, trash/restore, themes, mobile layout, safe Markdown rendering, edit dates, and recent-page ordering. Tests do not edit your real wiki.
+The suite covers file storage and CRUD, destination protection, external and concurrent edits, path safety, private request guards, direct page routes, editor/preview/link/search flows, draft recovery, conflict merging, trash/restore, themes, mobile layout, safe Markdown rendering, edit dates, recent-page ordering, image drop/paste/picker flows, upload failures and interruption, navigation during upload, and image persistence. Tests do not edit your real wiki.

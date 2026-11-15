@@ -6,6 +6,7 @@ import fcntl
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import tempfile
@@ -17,6 +18,8 @@ from urllib.parse import urlparse, parse_qs
 
 STATIC = Path(__file__).parent / 'static'
 MAX_BODY = 2 * 1024 * 1024
+MAX_IMAGE = 10 * 1024 * 1024
+IMAGE_TYPES = {'png': 'image/png', 'jpg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp'}
 LOCAL_HOSTS = frozenset(('localhost', '127.0.0.1', '::1'))
 
 class Problem(Exception):
@@ -29,7 +32,8 @@ class Store:
         self.root.mkdir(mode=0o700, parents=True, exist_ok=True)
         self.pages = self.root / 'pages'
         self.trash = self.root / '.trash'
-        for p in (self.pages, self.trash):
+        self.uploads = self.root / 'uploads'
+        for p in (self.pages, self.trash, self.uploads):
             if p.is_symlink():
                 raise ValueError('Storage directories cannot be symlinks')
             p.mkdir(mode=0o700, exist_ok=True)
@@ -67,6 +71,41 @@ class Store:
         except FileNotFoundError:
             raise Problem(404, 'Page not found')
         return {'path': name, 'content': raw.decode('utf-8'), 'revision': hashlib.sha256(raw).hexdigest(), 'modified': modified}
+
+    def upload_image(self, raw):
+        if not raw or len(raw) > MAX_IMAGE:
+            raise Problem(413, 'Images must be between 1 byte and 10 MB')
+        if len(raw) >= 24 and raw.startswith(b'\x89PNG\r\n\x1a\n') and raw[12:16] == b'IHDR':
+            extension = 'png'
+        elif len(raw) >= 4 and raw.startswith(b'\xff\xd8\xff'):
+            extension = 'jpg'
+        elif len(raw) >= 13 and raw[:6] in (b'GIF87a', b'GIF89a'):
+            extension = 'gif'
+        elif len(raw) >= 16 and raw[:4] == b'RIFF' and raw[8:12] == b'WEBP' and raw[12:16] in (b'VP8 ', b'VP8L', b'VP8X'):
+            extension = 'webp'
+        else:
+            raise Problem(415, 'Choose a PNG, JPEG, GIF, or WebP image. SVG and other file types are not supported.')
+        name = uuid.uuid4().hex + '.' + extension
+        path = self.uploads / name
+        # Exclusive creation prevents replacing any existing upload.
+        with path.open('xb') as file:
+            try:
+                os.chmod(path, 0o600)
+                file.write(raw)
+                file.flush()
+                os.fsync(file.fileno())
+            except BaseException:
+                path.unlink(missing_ok=True)
+                raise
+        return {'url': '/uploads/' + name, 'type': IMAGE_TYPES[extension], 'size': len(raw)}
+
+    def read_image(self, name):
+        if not re.fullmatch(r'[0-9a-f]{32}\.(png|jpg|gif|webp)', name):
+            raise Problem(404, 'Image not found')
+        path = self.uploads / name
+        if path.is_symlink() or not path.is_file():
+            raise Problem(404, 'Image not found')
+        return path.read_bytes(), IMAGE_TYPES[path.suffix[1:]]
 
     def listing(self, query=''):
         result = []
@@ -213,6 +252,10 @@ class Handler(BaseHTTPRequestHandler):
                     data = store.listing(args.get('q', [''])[0])
                 elif url.path == '/api/page':
                     data = store.read(args.get('path', [''])[0])
+                elif url.path.startswith('/uploads/'):
+                    raw, kind = store.read_image(url.path[len('/uploads/'):])
+                    self.reply(200, raw, kind)
+                    return
                 elif url.path == '/api/trash':
                     data = store.deleted()
                 elif url.path in ('/', '/app.js', '/style.css', '/recently-edited') or url.path.startswith('/page/'):
@@ -223,6 +266,20 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     raise Problem(404, 'Not found')
             elif self.command == 'POST':
+                if url.path == '/api/upload':
+                    if self.headers.get('X-Homewiki') != '1':
+                        raise Problem(403, 'A Homewiki upload request is required')
+                    content_type = self.headers.get('Content-Type', '').split(';')[0].strip().lower()
+                    if content_type not in {*IMAGE_TYPES.values(), 'image/jpg', 'application/octet-stream'}:
+                        raise Problem(415, 'Choose a PNG, JPEG, GIF, or WebP image')
+                    length = int(self.headers.get('Content-Length', '0'))
+                    if not 0 < length <= MAX_IMAGE:
+                        raise Problem(413, 'Images must be between 1 byte and 10 MB')
+                    raw = self.rfile.read(length)
+                    if len(raw) != length:
+                        raise Problem(400, 'Image upload was interrupted')
+                    self.reply(201, store.upload_image(raw))
+                    return
                 if self.headers.get('X-Homewiki') != '1' or self.headers.get('Content-Type') != 'application/json':
                     raise Problem(403, 'A Homewiki JSON request is required')
                 length = int(self.headers.get('Content-Length', '0'))

@@ -1,4 +1,5 @@
 import concurrent.futures
+import base64
 import importlib.util
 import json
 from pathlib import Path
@@ -11,6 +12,8 @@ from urllib.error import HTTPError
 spec = importlib.util.spec_from_file_location('homewiki', Path(__file__).resolve().parents[1] / 'server.py')
 app = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(app)
+
+PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1kAAAAASUVORK5CYII=')
 
 class StoreTests(unittest.TestCase):
     def setUp(self):
@@ -29,6 +32,29 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(self.store.deleted()[0]['path'], 'Archive/Done')
         self.assertEqual(self.store.restore(item['id'])['content'], '# Changed')
         self.assertEqual(self.store.deleted(), [])
+    def test_images_persist_through_page_moves_trash_and_restart(self):
+        image=self.store.upload_image(PNG)
+        self.assertEqual(image['type'],'image/png')
+        name=image['url'].split('/')[-1]
+        self.assertEqual(self.store.read_image(name),(PNG,'image/png'))
+        page=self.store.save('Photos/Note','![Photo]('+image['url']+')')
+        page=self.store.rename(page['path'],'Archive/Note',page['revision'])
+        token=self.store.delete(page['path'],page['revision'])['id']
+        self.assertEqual(self.store.read_image(name)[0],PNG)
+        self.assertIn(image['url'],self.store.restore(token)['content'])
+        self.assertEqual(app.Store(self.temp.name).read_image(name)[0],PNG)
+        self.assertNotEqual(image['url'],self.store.upload_image(PNG)['url'])
+    def test_invalid_images_and_upload_paths(self):
+        for raw in [b'<svg xmlns="http://www.w3.org/2000/svg"></svg>',b'<script>alert(1)</script>',b'fake PNG']:
+            with self.assertRaises(app.Problem) as caught:self.store.upload_image(raw)
+            self.assertEqual(caught.exception.status,415)
+        with self.assertRaises(app.Problem):self.store.upload_image(b'x'*(app.MAX_IMAGE+1))
+        for name in ['../Home.md','../../secret','a.png','0'*32+'.svg']:
+            with self.assertRaises(app.Problem):self.store.read_image(name)
+        outside=Path(self.temp.name)/'outside.png';outside.write_bytes(PNG)
+        name='0'*32+'.png';(self.store.uploads/name).symlink_to(outside)
+        with self.assertRaises(app.Problem):self.store.read_image(name)
+
     def test_conflicts_and_existing_paths_never_overwritten(self):
         first = self.store.save('Note', 'one')
         self.store.save('Note', 'two', first['revision'])
@@ -90,7 +116,7 @@ class HTTPTests(unittest.TestCase):
     def tearDownClass(cls):
         cls.server.shutdown();cls.server.server_close();cls.thread.join();cls.temp.cleanup()
     def request(self,path,body=None,headers=None):
-        req=Request(self.url+path,data=json.dumps(body).encode() if body is not None else None,headers=headers or {})
+        req=Request(self.url+path,data=body if isinstance(body,bytes) else json.dumps(body).encode() if body is not None else None,headers=headers or {})
         try:
             with urlopen(req) as response:return response.status,response.read(),response.headers
         except HTTPError as e:
@@ -122,6 +148,19 @@ class HTTPTests(unittest.TestCase):
             self.assertEqual(self.request('/api/save',{'path':'Attack','content':'bad'},headers)[0],403)
         finally:
             self.server.allowed_hosts=app.LOCAL_HOSTS
+    def test_upload_http_and_private_guards(self):
+        headers={'Content-Type':'application/octet-stream','X-Homewiki':'1'}
+        status,raw,_=self.request('/api/upload',PNG,headers);self.assertEqual(status,201)
+        image=json.loads(raw)
+        status,raw,response_headers=self.request(image['url'])
+        self.assertEqual((status,raw),(200,PNG))
+        self.assertEqual(response_headers['Content-Type'],'image/png')
+        self.assertEqual(response_headers['X-Content-Type-Options'],'nosniff')
+        self.assertEqual(self.request('/api/upload',PNG,{'Content-Type':'image/png'})[0],403)
+        self.assertEqual(self.request('/api/upload',PNG,{**headers,'Origin':'http://attacker.example'})[0],403)
+        self.assertEqual(self.request('/api/upload',b'<svg/>',headers)[0],415)
+        self.assertEqual(self.request('/uploads/../server.py')[0],404)
+
     def test_bad_payload(self):
         self.assertEqual(self.request('/api/save',[],{'Content-Type':'application/json','X-Homewiki':'1'})[0],400)
 
