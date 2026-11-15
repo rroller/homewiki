@@ -69,9 +69,47 @@ function inline(text) {
   text=esc(text).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/__(.+?)__/g,'<strong>$1</strong>').replace(/\*([^*]+)\*/g,'<em>$1</em>').replace(/~~(.+?)~~/g,'<del>$1</del>');
   return text.replace(/\x01(\d+)\x02/g,(_,i)=>slots[Number(i)]||'');
 }
-function markdown(source, hideTitle=false) {
+function expandListIndent(line){
+  return line.replace(/^[ \t]*/,prefix=>{let width=0;for(const char of prefix)width+=char==='\t'?4-width%4:1;return ' '.repeat(width);});
+}
+function listItem(line){
+  const expanded=expandListIndent(line);
+  const match=expanded.match(/^( *)([-*+]|\d{1,9}[.)])(?:([ \t]+)(.*)|$)/);
+  if(!match)return null;
+  return {indent:match[1].length,ordered:/^\d/.test(match[2]),number:parseInt(match[2],10),body:match[4]||'',contentIndent:match[1].length+match[2].length+(match[3]?.length||1)};
+}
+function renderList(lines,start,depth){
+  const first=listItem(lines[start]);const tag=first.ordered?'ol':'ul';
+  let html='<'+tag+(first.ordered&&first.number!==1?' start="'+first.number+'"':'')+'>';let i=start;
+  while(i<lines.length){
+    const item=listItem(lines[i]);
+    if(!item||item.indent!==first.indent||item.ordered!==first.ordered)break;
+    const body=[item.body];i++;
+    while(i<lines.length){
+      const line=expandListIndent(lines[i]);
+      if(!line.trim()){
+        let next=i+1;while(next<lines.length&&!lines[next].trim())next++;
+        if(next===lines.length)break;
+        const following=expandListIndent(lines[next]);const nextItem=listItem(following);
+        const indent=following.match(/^ */)[0].length;
+        if(indent<=first.indent&&!(nextItem&&nextItem.indent===first.indent&&nextItem.ordered===first.ordered))break;
+        body.push('');i++;continue;
+      }
+      const indent=line.match(/^ */)[0].length;
+      if(indent<=first.indent)break;
+      body.push(line.slice(Math.min(indent,item.contentIndent)));i++;
+    }
+    const task=body[0].match(/^\[([ xX])\](?:\s+(.*)|$)/);
+    if(task)body[0]=task[2]||'';
+    let content=depth>=32?'<pre><code>'+esc(body.join('\n'))+'</code></pre>':markdown(body.join('\n'),false,depth+1);
+    if(task){const checkbox='<input class="task-box" type="checkbox" disabled '+(task[1]!==' '?'checked':'')+'>';content=content.startsWith('<p>')?'<p>'+checkbox+content.slice(3):checkbox+content;}
+    html+='<li>'+content+'</li>';
+  }
+  return {html:html+'</'+tag+'>',next:i};
+}
+function markdown(source, hideTitle=false, depth=0) {
   const lines=source.replace(/\r\n/g,'\n').split('\n'); let html='', i=0, first=true;
-  const special=line=>/^(#{1,6})\s|^\s*```|^\s*~~~|^>\s?|^\s*[-*+]\s|^\s*\d+\.\s|^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line);
+  const special=line=>listItem(line)||/^(#{1,6})\s|^\s*```|^\s*~~~|^>\s?|^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line);
   while(i<lines.length) {
     let line=lines[i];
     if(!line.trim()){i++;continue;}
@@ -87,8 +125,7 @@ function markdown(source, hideTitle=false) {
       while(i<lines.length&&lines[i].includes('|')&&lines[i].trim()){html+='<tr>'+cells(lines[i++]).map(c=>'<td>'+inline(c)+'</td>').join('')+'</tr>';}
       html+='</tbody></table>';first=false;continue;
     }
-    const list=line.match(/^\s*([-*+]|\d+\.)\s+(.+)$/);
-    if(list){const ordered=/\d/.test(list[1]);const tag=ordered?'ol':'ul';html+='<'+tag+'>';while(i<lines.length){const item=lines[i].match(/^\s*([-*+]|\d+\.)\s+(.+)$/);if(!item||/\d/.test(item[1])!==ordered)break;let body=item[2];const check=body.match(/^\[([ xX])\]\s+(.*)$/);html+='<li>'+(check?'<input class="task-box" type="checkbox" disabled '+(check[1]!==' '?'checked':'')+'>'+inline(check[2]):inline(body))+'</li>';i++;}html+='</'+tag+'>';first=false;continue;}
+    if(listItem(line)){const list=renderList(lines,i,depth);html+=list.html;i=list.next;first=false;continue;}
     let paragraph=[line];i++;
     while(i<lines.length&&lines[i].trim()&&!special(lines[i])&&!(lines[i].includes('|')&&i+1<lines.length&&/^\s*\|?\s*:?-{3,}/.test(lines[i+1])))paragraph.push(lines[i++]);
     html+='<p>'+paragraph.map(inline).join('<br>')+'</p>';first=false;
