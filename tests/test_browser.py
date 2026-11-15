@@ -286,6 +286,75 @@ After the table.
         self.assertEqual(p.locator('#content tbody tr').evaluate_all('rows=>rows.map(row=>Array.from(row.cells,cell=>cell.textContent))'),expected)
         self.assertEqual(self.store.read('Home')['content'],content)
 
+    def test_table_sorting_in_preview_and_reader(self):
+        p=self.page
+        content="""# Sortable games
+
+| Game | Hours | Completed |
+| --- | --- | --- |
+| Game 10 | 10 | Yes |
+| Game 2 | 2 |
+| Alpha | 1.5 | No |
+| Beta | 1.10 | Yes |
+| Gamma | -2 | No |
+| Another 2 | 2 | Yes |
+| Long game | 1,000 | Yes |
+| Empty |
+
+| Other | Value |
+| --- | --- |
+| Unchanged | 7 |
+"""
+        p.locator('#edit-page').click();p.locator('#source').fill(content);p.locator('#tab-preview').click()
+        table=p.locator('#preview table').first
+        hours=table.get_by_role('button',name='Hours',exact=True)
+        hours.click()
+        self.assertEqual(table.locator('tbody tr').evaluate_all('rows=>rows.map(r=>r.cells[1].textContent)'),['-2','1.10','1.5','2','2','10','1,000',''])
+        self.assertEqual(table.locator('tbody tr').evaluate_all('rows=>rows.filter(r=>r.cells[1].textContent==="2").map(r=>r.cells[0].textContent)'),['Game 2','Another 2'])
+        expect(table.locator('th[aria-sort]')).to_have_attribute('aria-sort','ascending')
+        hours.focus();p.keyboard.press('Enter')
+        self.assertEqual(table.locator('tbody tr').evaluate_all('rows=>rows.map(r=>r.cells[1].textContent)'),['1,000','10','2','2','1.5','1.10','-2',''])
+        expect(table.locator('th[aria-sort]')).to_have_attribute('aria-sort','descending')
+        p.keyboard.press('Space')
+        expect(table.locator('th[aria-sort]')).to_have_attribute('aria-sort','ascending')
+        table.get_by_role('button',name='Game',exact=True).click()
+        games=table.locator('tbody tr').evaluate_all('rows=>rows.map(r=>r.cells[0].textContent)')
+        self.assertLess(games.index('Game 2'),games.index('Game 10'))
+        expect(table.locator('th[aria-sort]')).to_have_count(1)
+        completed=table.get_by_role('button',name='Completed',exact=True)
+        completed.click()
+        self.assertEqual(table.locator('tbody tr').evaluate_all('rows=>rows.map(r=>r.cells[2].textContent)'),['No','No','Yes','Yes','Yes','Yes','',''])
+        completed.click()
+        self.assertEqual(table.locator('tbody tr').evaluate_all('rows=>rows.map(r=>r.cells[2].textContent)'),['Yes','Yes','Yes','Yes','No','No','',''])
+        expect(p.locator('#preview table').nth(1).locator('tbody tr')).to_have_text('Unchanged7')
+        self.assertEqual(p.locator('#source').input_value(),content)
+        p.locator('#save-page').click();expect(p.locator('#editor')).to_be_hidden()
+        self.assertEqual(self.store.read('Home')['content'],content)
+        p.reload()
+        reader=p.locator('#content table').first
+        expect(reader.locator('tbody tr').first.locator('td').first).to_have_text('Game 10')
+        revision=self.store.read('Home')['revision']
+        reader.get_by_role('button',name='Hours',exact=True).click()
+        expect(reader.locator('tbody tr').first.locator('td').first).to_have_text('Gamma')
+        self.assertEqual(self.store.read('Home')['revision'],revision)
+    def test_table_headers_stay_on_one_line_on_mobile(self):
+        p=self.page
+        source='| Game | System | **Completed** | Additional details, notes, and comments |\n| --- | --- | --- | --- |\n| Portal | PC |\n'
+        p.locator('#content').evaluate('(node,source)=>node.innerHTML=markdown(source)',source)
+        p.locator('#collapse').click();p.set_viewport_size({'width':390,'height':844})
+        button=p.locator('#content').get_by_role('button',name='Completed',exact=True)
+        expect(button).to_have_css('white-space','nowrap')
+        expect(p.locator('#content th').nth(2)).to_have_css('overflow-wrap','normal')
+        label=button.locator('span').first
+        self.assertLessEqual(label.bounding_box()['height'],float(label.evaluate('node=>parseFloat(getComputedStyle(node).lineHeight)'))+1)
+        self.assertTrue(p.locator('#content table').evaluate('node=>node.scrollWidth>node.clientWidth'))
+        self.assertTrue(p.evaluate('document.documentElement.scrollWidth<=innerWidth'))
+        # Formatting remains, but links inside sortable headings cannot create nested controls.
+        p.locator('#content').evaluate('(node,source)=>node.innerHTML=markdown(source)','| [Completed](https://example.com) | Empty |\n| --- | --- |\n')
+        expect(p.locator('#content th button a')).to_have_count(0)
+        p.locator('#content').get_by_role('button',name='Completed',exact=True).click()
+        expect(p.locator('#content th').first).to_have_attribute('aria-sort','ascending')
+
     def test_recent_edits_and_footer(self):
         p=self.page
         now=time.time()

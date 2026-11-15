@@ -15,3 +15,5 @@ aside{width:280px;padding:24px 12px 0;background:#fafafa}.brand{font-size:22px;f
 .markdown .wiki-image-link:hover{text-decoration:none}
 
 .brand-home{color:inherit;text-decoration:none;border-radius:4px}.brand-home:hover{color:var(--link)}
+
+.markdown table{max-width:100%}.markdown th{padding:0;white-space:nowrap;overflow-wrap:normal;word-break:normal}.table-sort{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;padding:10px 14px;color:inherit;font:inherit;text-align:left;white-space:nowrap;overflow-wrap:normal;word-break:normal}.table-sort:hover{background:var(--hover)}.table-sort:focus-visible{outline-offset:-3px}.table-sort-indicator{font-size:12px;color:var(--muted);flex-shrink:0}.markdown th[aria-sort] .table-sort-indicator{color:var(--link)}
