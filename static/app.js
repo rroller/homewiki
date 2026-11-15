@@ -155,8 +155,12 @@ function markdown(source, hideTitle=false, depth=0) {
     if(/^>/.test(line)){const block=[];while(i<lines.length&&/^>/.test(lines[i]))block.push(lines[i++].replace(/^>\s?/,''));html+='<blockquote>'+markdown(block.join('\n'))+'</blockquote>';first=false;continue;}
     if(line.includes('|')&&i+1<lines.length&&/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[i+1])) {
       const cells=s=>s.trim().replace(/^\||\|$/g,'').split('|').map(v=>v.trim());
-      html+='<table><thead><tr>'+cells(line).map(c=>'<th>'+inline(c)+'</th>').join('')+'</tr></thead><tbody>';i+=2;
-      while(i<lines.length&&lines[i].includes('|')&&lines[i].trim()){html+='<tr>'+cells(lines[i++]).map(c=>'<td>'+inline(c)+'</td>').join('')+'</tr>';}
+      const headers=cells(line);
+      html+='<table><thead><tr>'+headers.map(c=>'<th>'+inline(c)+'</th>').join('')+'</tr></thead><tbody>';i+=2;
+      while(i<lines.length&&lines[i].includes('|')&&lines[i].trim()){
+        const row=cells(lines[i++]);
+        html+='<tr>'+headers.map((_,column)=>'<td>'+inline(row[column]??'')+'</td>').join('')+'</tr>';
+      }
       html+='</tbody></table>';first=false;continue;
     }
     if(listItem(line)){const list=renderList(lines,i,depth);html+=list.html;i=list.next;first=false;continue;}
