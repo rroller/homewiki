@@ -260,6 +260,32 @@ A paragraph after the lists.
         p.go_back();expect(p.locator('#source')).to_have_value('# A draft to keep')
         p.locator('#brand-home').click();expect(p.locator('#page-title')).to_have_text('Home')
 
+    def test_incomplete_table_rows_render_empty_cells(self):
+        p=self.page
+        content="""# Games I own
+
+| Game | System | Completed |
+| --- | --- | --- |
+| Team Fortress 2 | PC
+Portal | PC
+| Portal 2 |
+| Bloons TD 6 | PC | |
+| Crysis | PC | Yes | extra |
+
+After the table.
+"""
+        expected=[['Team Fortress 2','PC',''],['Portal','PC',''],['Portal 2','',''],['Bloons TD 6','PC',''],['Crysis','PC','Yes']]
+        p.locator('#edit-page').click();p.locator('#source').fill(content);p.locator('#tab-preview').click()
+        expect(p.locator('#preview th')).to_have_count(3)
+        expect(p.locator('#preview tbody tr')).to_have_count(5)
+        actual=p.locator('#preview tbody tr').evaluate_all('rows=>rows.map(row=>Array.from(row.cells,cell=>cell.textContent))')
+        self.assertEqual(actual,expected)
+        expect(p.locator('#preview > p').last).to_have_text('After the table.')
+        p.locator('#save-page').click();expect(p.locator('#editor')).to_be_hidden()
+        p.reload();expect(p.locator('#content tbody tr')).to_have_count(5)
+        self.assertEqual(p.locator('#content tbody tr').evaluate_all('rows=>rows.map(row=>Array.from(row.cells,cell=>cell.textContent))'),expected)
+        self.assertEqual(self.store.read('Home')['content'],content)
+
     def test_recent_edits_and_footer(self):
         p=self.page
         now=time.time()
