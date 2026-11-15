@@ -1,0 +1,286 @@
+'use strict';
+const $ = id => document.getElementById(id);
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pageURL = p => '/page/' + p.split('/').map(encodeURIComponent).join('/');
+const state = {recent:false, pages:[], page:null, editing:false, base:null, dirty:false, preview:false, remote:false};
+let tabID;
+try { tabID=sessionStorage.getItem('homewiki:tab'); if(!tabID){tabID=crypto.randomUUID();sessionStorage.setItem('homewiki:tab',tabID);} } catch {tabID=String(Date.now())+Math.random();}
+const draftPrefix = p => 'homewiki:draft:v2:' + encodeURIComponent(p) + ':';
+const draftKey = p => draftPrefix(p) + tabID;
+let toastTimer, navigating = 0;
+function toast(message) { $('toast').textContent=message; $('toast').hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').hidden=true,4000); }
+function stored(key, fallback=null) { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } }
+function setStored(key, value) { try { localStorage.setItem(key,value); return true; } catch { return false; } }
+const recoveredDrafts=new Map();
+function removeDraft(path) { try { localStorage.removeItem(draftKey(path)); const recovered=recoveredDrafts.get(path); if(recovered && localStorage.getItem(recovered.key)===recovered.raw)localStorage.removeItem(recovered.key); recoveredDrafts.delete(path); } catch { /* unload protection remains */ } }
+function draft(path) {
+  try {
+    const own=stored(draftKey(path));if(own)return JSON.parse(own);
+    let latest=null;
+    for(let i=0;i<localStorage.length;i++){
+      const key=localStorage.key(i);if(!key.startsWith(draftPrefix(path)))continue;
+      const raw=localStorage.getItem(key);let value;try{value=JSON.parse(raw);}catch{continue;}
+      if(!value||typeof value.content!=='string')continue;
+      if(!latest||value.updated>latest.value.updated)latest={key,raw,value};
+    }
+    if(latest){recoveredDrafts.set(path,latest);return latest.value;}
+    return null;
+  } catch { return null; }
+}
+async function api(route, data) {
+  const response=await fetch('/api/'+route, data === undefined ? {} : {method:'POST',headers:{'Content-Type':'application/json','X-Homewiki':'1'},body:JSON.stringify(data)});
+  const result=await response.json();
+  if(!response.ok) { const error=new Error(result.error || 'Request failed'); error.status=response.status; throw error; }
+  return result;
+}
+// Markdown is rendered from escaped text. Raw HTML and external images are intentionally unsupported.
+function inline(text) {
+  const slots=[];
+  const hold=html => {slots.push(html); return '\x01'+(slots.length-1)+'\x02';};
+  text=String(text).replace(/[\x01\x02]/g,'');
+  text=text.replace(/`([^`]+)`/g,(_,code)=>hold('<code>'+esc(code)+'</code>'));
+  text=text.replace(/\[\[([^\]\n]+)\]\]/g,(_,body)=>{
+    const [path,...label]=body.split('|');
+    return hold('<a href="'+esc(pageURL(path.trim()))+'">'+esc(label.join('|')||path)+'</a>');
+  });
+  text=text.replace(/(!?)\[([^\]\n]+)\]\((<[^>]+>|[^)\n]+)\)/g,(_,image,label,target)=>{
+    target=target.replace(/^<|>$/g,'').trim();
+    if(image) return hold('<span>'+esc(label)+' (image)</span>');
+    let href, external=false;
+    if(/^https?:\/\//i.test(target)) {href=target; external=true;}
+    else if(/^mailto:/i.test(target)) href=target;
+    else if(/^[a-z][a-z\d+.-]*:/i.test(target)||target.startsWith('//')) return hold(esc(label));
+    else if(target.startsWith('#')) href=target;
+    else {
+      let decoded; try {decoded=decodeURIComponent(target);} catch {decoded=target;}
+      const root=decoded.startsWith('/');
+      const parts=root?[]:(state.page?.path.split('/').slice(0,-1)||[]);
+      for(const part of decoded.replace(/^\//,'').replace(/\.md$/i,'').split('/')) {
+        if(part==='..') parts.pop(); else if(part && part!=='.') parts.push(part);
+      }
+      href=pageURL(parts.join('/'));
+    }
+    return hold('<a href="'+esc(href)+'"'+(external?' target="_blank" rel="noopener noreferrer"':'')+'>'+esc(label)+'</a>');
+  });
+  text=esc(text).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/__(.+?)__/g,'<strong>$1</strong>').replace(/\*([^*]+)\*/g,'<em>$1</em>').replace(/~~(.+?)~~/g,'<del>$1</del>');
+  return text.replace(/\x01(\d+)\x02/g,(_,i)=>slots[Number(i)]||'');
+}
+function markdown(source, hideTitle=false) {
+  const lines=source.replace(/\r\n/g,'\n').split('\n'); let html='', i=0, first=true;
+  const special=line=>/^(#{1,6})\s|^\s*```|^\s*~~~|^>\s?|^\s*[-*+]\s|^\s*\d+\.\s|^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line);
+  while(i<lines.length) {
+    let line=lines[i];
+    if(!line.trim()){i++;continue;}
+    const fence=line.match(/^\s*(```+|~~~+)(.*)$/);
+    if(fence){let code=[];i++;while(i<lines.length&&!lines[i].startsWith(fence[1]))code.push(lines[i++]);i++;html+='<pre><code>'+esc(code.join('\n'))+'</code></pre>';first=false;continue;}
+    const heading=line.match(/^(#{1,6})\s+(.+)$/);
+    if(heading){const level=heading[1].length;const id=heading[2].toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu,'').replace(/\s+/g,'-');if(!(first&&hideTitle&&level===1))html+=`<h${level} id="${esc(id)}">${inline(heading[2])}</h${level}>`;i++;first=false;continue;}
+    if(/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)){html+='<hr>';i++;first=false;continue;}
+    if(/^>/.test(line)){const block=[];while(i<lines.length&&/^>/.test(lines[i]))block.push(lines[i++].replace(/^>\s?/,''));html+='<blockquote>'+markdown(block.join('\n'))+'</blockquote>';first=false;continue;}
+    if(line.includes('|')&&i+1<lines.length&&/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[i+1])) {
+      const cells=s=>s.trim().replace(/^\||\|$/g,'').split('|').map(v=>v.trim());
+      html+='<table><thead><tr>'+cells(line).map(c=>'<th>'+inline(c)+'</th>').join('')+'</tr></thead><tbody>';i+=2;
+      while(i<lines.length&&lines[i].includes('|')&&lines[i].trim()){html+='<tr>'+cells(lines[i++]).map(c=>'<td>'+inline(c)+'</td>').join('')+'</tr>';}
+      html+='</tbody></table>';first=false;continue;
+    }
+    const list=line.match(/^\s*([-*+]|\d+\.)\s+(.+)$/);
+    if(list){const ordered=/\d/.test(list[1]);const tag=ordered?'ol':'ul';html+='<'+tag+'>';while(i<lines.length){const item=lines[i].match(/^\s*([-*+]|\d+\.)\s+(.+)$/);if(!item||/\d/.test(item[1])!==ordered)break;let body=item[2];const check=body.match(/^\[([ xX])\]\s+(.*)$/);html+='<li>'+(check?'<input class="task-box" type="checkbox" disabled '+(check[1]!==' '?'checked':'')+'>'+inline(check[2]):inline(body))+'</li>';i++;}html+='</'+tag+'>';first=false;continue;}
+    let paragraph=[line];i++;
+    while(i<lines.length&&lines[i].trim()&&!special(lines[i])&&!(lines[i].includes('|')&&i+1<lines.length&&/^\s*\|?\s*:?-{3,}/.test(lines[i+1])))paragraph.push(lines[i++]);
+    html+='<p>'+paragraph.map(inline).join('<br>')+'</p>';first=false;
+  }
+  return html;
+}
+function notice(message, action, handler) {
+  const box=$('notice');box.replaceChildren();box.hidden=!message;
+  if(message)box.append(document.createTextNode(message));
+  if(action){const b=document.createElement('button');b.textContent=action;b.onclick=handler;box.append(b);}
+}
+function setTheme(theme) {document.documentElement.dataset.theme=theme;$('theme-label').textContent=theme==='dark'?'Light appearance':'Dark appearance';setStored('homewiki:theme',theme);}
+setTheme(stored('homewiki:theme')||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'));
+if(stored('homewiki:sidebar')==='hidden'||innerWidth<721)document.body.classList.add('sidebar-hidden');
+function sidebar(hidden){document.body.classList.toggle('sidebar-hidden',hidden);setStored('homewiki:sidebar',hidden?'hidden':'shown');}
+$('collapse').onclick=()=>sidebar(true);$('expand').onclick=()=>sidebar(false);
+$('theme-toggle').onclick=()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
+
+function renderTree(){
+  const root={children:new Map()};
+  for(const page of state.pages){let node=root;const parts=page.path.split('/');parts.forEach((part,index)=>{if(!node.children.has(part))node.children.set(part,{name:part,path:parts.slice(0,index+1).join('/'),children:new Map()});node=node.children.get(part);});node.page=page;}
+  $('tree').replaceChildren();$('page-count').textContent=state.pages.length;
+  function render(parent,node,depth){
+    for(const child of node.children.values()){
+      const row=document.createElement('div');row.className='tree-row'+(child.path===state.page?.path?' active':'');row.style.paddingLeft=(depth*15+3)+'px';
+      const toggle=document.createElement('button');toggle.className='tree-toggle';toggle.type='button';row.append(toggle);
+      let collapsed=stored('homewiki:folder:'+child.path)==='closed';
+      const sub=document.createElement('div');
+      if(child.children.size){toggle.textContent=collapsed?'▸':'▾';toggle.setAttribute('aria-label','Toggle '+child.name);toggle.setAttribute('aria-expanded',String(!collapsed));sub.hidden=collapsed;toggle.onclick=()=>{collapsed=!collapsed;sub.hidden=collapsed;toggle.textContent=collapsed?'▸':'▾';toggle.setAttribute('aria-expanded',String(!collapsed));setStored('homewiki:folder:'+child.path,collapsed?'closed':'open');};}else{toggle.textContent='';toggle.disabled=true;toggle.tabIndex=-1;}
+      if(child.page){const a=document.createElement('a');a.href=pageURL(child.path);a.innerHTML='<span>'+esc(child.name)+'</span>';a.title=child.path;if(child.path===state.page?.path)a.setAttribute('aria-current','page');row.append(a);}else{const label=document.createElement('span');label.className='folder-name';label.textContent=child.name;row.append(label);}
+      parent.append(row);if(child.children.size){parent.append(sub);render(sub,child,depth+1);}
+    }
+  }
+  render($('tree'),root,0);
+}
+async function refreshPages(){state.pages=await api('pages');renderTree();if(state.recent)renderRecent();}
+function renderBreadcrumb(path){
+  const parts=path.split('/');
+  $('breadcrumb').replaceChildren();
+  parts.forEach((part,index)=>{
+    if(index){const separator=document.createElement('span');separator.className='breadcrumb-separator';separator.textContent='/';separator.setAttribute('aria-hidden','true');$('breadcrumb').append(separator);}
+    const current=index===parts.length-1;
+    const item=document.createElement(current?'span':'a');item.textContent=part;
+    if(current)item.setAttribute('aria-current','page');
+    else{item.href=pageURL(parts.slice(0,index+1).join('/'));item.title='Go to '+parts.slice(0,index+1).join('/');}
+    $('breadcrumb').append(item);
+  });
+}
+function editDate(value){return new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'short'});}
+function renderRecent(){
+  $('page-title').textContent='Recently edited';renderBreadcrumb('Recently edited');document.title='Recently edited · Homewiki';
+  $('reader').hidden=false;$('editor').hidden=true;$('edit-page').hidden=true;$('more').hidden=true;$('actions').hidden=true;$('page-footer').hidden=true;
+  $('recently-edited').setAttribute('aria-current','page');
+  const content=$('content');content.replaceChildren();
+  const intro=document.createElement('p');intro.className='recent-intro';intro.textContent='Your latest saved edits, newest first.';content.append(intro);
+  const list=document.createElement('div');list.className='recent-list';
+  const pages=[...state.pages].sort((a,b)=>new Date(b.modified)-new Date(a.modified)||a.path.localeCompare(b.path));
+  for(const page of pages){
+    const link=document.createElement('a');link.href=pageURL(page.path);link.className='recent-page';
+    const label=document.createElement('span');const title=document.createElement('strong');title.textContent=page.path.split('/').pop();label.append(title);
+    const path=document.createElement('small');path.textContent=page.path;label.append(path);
+    const time=document.createElement('time');time.dateTime=page.modified;time.textContent=editDate(page.modified);time.title=new Date(page.modified).toString();
+    link.append(label,time);list.append(link);
+  }
+  if(!pages.length){const empty=document.createElement('p');empty.textContent='No pages yet. Create a page to get started.';list.append(empty);}
+  content.append(list);renderTree();
+}
+function navigateRecent(){
+  preserveDraft();const turn=++navigating;state.recent=true;state.page=null;state.editing=false;state.dirty=false;notice('');renderRecent();
+  if(innerWidth<721)sidebar(true);window.scrollTo(0,0);
+  refreshPages().catch(error=>{if(turn===navigating)notice(error.message);});
+}
+function paintPage(){
+  const page=state.page;if(!page)return;
+  $('more').hidden=false;$('page-footer').hidden=false;$('recently-edited').removeAttribute('aria-current');
+  $('last-edited').dateTime=page.modified;$('last-edited').textContent='Last edited '+editDate(page.modified);$('last-edited').title=new Date(page.modified).toString();
+  $('page-title').textContent=page.path.split('/').pop();renderBreadcrumb(page.path);document.title=page.path.split('/').pop()+' · Homewiki';
+  $('content').innerHTML=markdown(page.content,true);$('word-count').textContent=page.content.trim()?page.content.trim().split(/\s+/).length+' words':'0 words';
+  $('reader').hidden=state.editing;$('editor').hidden=!state.editing;$('edit-page').hidden=state.editing;
+  renderTree();
+}
+function preserveDraft(){
+  if(!state.editing||!state.page)return;
+  state.dirty=$('source').value!==state.page.content||state.base!==state.page.revision;
+  if(state.dirty){const ok=setStored(draftKey(state.page.path),JSON.stringify({content:$('source').value,revision:state.base,updated:Date.now()}));$('draft-status').textContent=ok?'Draft saved in this browser':'Browser storage unavailable — keep this tab open';}
+  else{removeDraft(state.page.path);$('draft-status').textContent='All changes saved';}
+}
+async function navigate(path){
+  const turn=++navigating;preserveDraft();state.recent=false;$('recently-edited').removeAttribute('aria-current');
+  try{const page=await api('page?path='+encodeURIComponent(path));if(turn!==navigating)return;
+    state.page=page;state.editing=false;state.dirty=false;state.remote=false;notice('');paintPage();
+    const saved=draft(path);if(saved&&saved.content!==page.content)startEdit(saved);
+    else if(saved)removeDraft(path);
+    if(innerWidth<721)sidebar(true);window.scrollTo(0,0);
+  }catch(error){if(turn!==navigating)return;state.page=null;state.editing=false;state.dirty=false;$('reader').hidden=false;$('editor').hidden=true;$('edit-page').hidden=true;$('page-title').textContent=path||'Page not found';renderBreadcrumb(path);$('content').textContent=error.message;$('word-count').textContent='';$('page-footer').hidden=true;$('more').hidden=true;notice(error.status===404?'This page does not exist yet.':'Unable to load this page.',error.status===404?'Create page':null,()=>createDialog(path));renderTree();}
+}
+function route(){
+  if(location.pathname==='/recently-edited'&&!location.hash.startsWith('#/page/')){navigateRecent();return;}
+  let path='Home';
+  try{
+    if(location.hash.startsWith('#/page/')){
+      path=decodeURIComponent(location.hash.slice(7));history.replaceState(null,'',pageURL(path));
+    }else if(location.pathname.startsWith('/page/'))path=decodeURIComponent(location.pathname.slice(6))||'Home';
+  }catch{toast('Invalid page link');}
+  navigate(path);
+}
+window.addEventListener('popstate',route);
+window.addEventListener('hashchange',()=>{if(location.hash.startsWith('#/page/'))route();});
+function go(path){const url=pageURL(path);if(location.pathname!==url||location.hash)history.pushState(null,'',url);route();}
+document.addEventListener('click',event=>{
+  if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+  const link=event.target.closest('a[href]');if(!link||link.hasAttribute('download')||(link.target&&link.target!=='_self'))return;
+  const url=new URL(link.href,location.href);
+  if(url.origin===location.origin&&(url.pathname.startsWith('/page/')||url.pathname==='/recently-edited')){
+    event.preventDefault();history.pushState(null,'',url.pathname+url.search+url.hash);route();
+  }
+});
+function startEdit(saved=null){
+  if(!state.page)return;state.editing=true;state.base=saved?saved.revision:state.page.revision;state.remote=Boolean(saved&&saved.revision!==state.page.revision);$('source').value=saved?saved.content:state.page.content;setPreview(false);paintPage();preserveDraft();
+  if(saved)notice(state.remote?'Recovered your draft. The file has changed since this draft began.':'Recovered your unsaved draft from this browser.',state.remote?'Compare versions':null,compare);
+  $('source').focus();
+}
+function setPreview(on){state.preview=on;$('source').hidden=on;$('preview').hidden=!on;$('tab-write').classList.toggle('selected',!on);$('tab-preview').classList.toggle('selected',on);if(on)$('preview').innerHTML=markdown($('source').value);}
+$('edit-page').onclick=()=>startEdit();$('tab-write').onclick=()=>setPreview(false);$('tab-preview').onclick=()=>setPreview(true);
+$('source').addEventListener('input',preserveDraft);
+$('source').addEventListener('keydown',e=>{if(e.key==='Tab'){e.preventDefault();$('source').setRangeText('  ',$('source').selectionStart,$('source').selectionEnd,'end');preserveDraft();}});
+$('cancel-edit').onclick=()=>{preserveDraft();state.editing=false;paintPage();notice(state.dirty?'Your draft is saved in this browser. Reopen the editor to continue.':'',state.dirty?'Discard draft':null,discardDialog);};
+$('edit-page').onclick=()=>startEdit(draft(state.page.path));
+async function save(){
+  if(!state.editing||!state.page)return;
+  const path=state.page.path, content=$('source').value,revision=state.base;
+  $('save-page').disabled=true;
+  try{const page=await api('save',{path,content,revision});removeDraft(path);
+    if(state.page?.path===path){state.page=page;state.base=page.revision;state.remote=false;state.dirty=false;if($('source').value!==content)preserveDraft();else{state.editing=false;notice('');paintPage();}}await refreshPages();toast('Page saved');
+  }catch(error){if(error.status===409){state.remote=true;notice(error.message,'Compare versions',compare);}else notice(error.message);preserveDraft();}
+  finally{$('save-page').disabled=false;}
+}
+$('save-page').onclick=save;
+function modal(title){$('modal-title').textContent=title;$('modal-body').replaceChildren();if(!$('modal').open)$('modal').showModal();return $('modal-body');}
+function closeModal(){$('modal').close();}
+$('modal-close').onclick=closeModal;
+$('modal').addEventListener('click',e=>{if(e.target===$('modal')){const r=$('modal').getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)closeModal();}});
+function errorInto(body,error){let p=body.querySelector('.error-text');if(!p){p=document.createElement('p');p.className='error-text';p.setAttribute('role','alert');body.append(p);}p.textContent=error.message;}
+function formDialog(title,description,value,submitLabel,callback){
+  const body=modal(title);const p=document.createElement('p');p.textContent=description;body.append(p);
+  const form=document.createElement('form');form.innerHTML='<label for="page-path">Page path</label><input id="page-path" type="text" required maxlength="400" autocomplete="off"><div class="dialog-buttons"><button type="button" class="subtle-button">Cancel</button><button class="primary-button" type="submit">'+esc(submitLabel)+'</button></div>';body.append(form);const input=form.querySelector('input');input.value=value;form.querySelector('button').onclick=closeModal;
+  form.onsubmit=async e=>{e.preventDefault();const button=form.querySelector('[type=submit]');button.disabled=true;try{await callback(input.value.trim());}catch(error){errorInto(body,error);}finally{button.disabled=false;}};input.focus();input.select();
+}
+function createDialog(initial=''){
+  formDialog('Create a page','Use / to nest pages. For example: Games/Completed games.',initial,'Create page',async path=>{
+    await api('save',{path,content:'# '+path.split('/').pop()+'\n\n',revision:null});await refreshPages();closeModal();go(path);
+  });
+}
+$('new-page').onclick=()=>createDialog();
+$('more').onclick=()=>{$('actions').hidden=!$('actions').hidden;$('more').setAttribute('aria-expanded',String(!$('actions').hidden));};
+document.addEventListener('click',e=>{if(!e.target.closest('.header-actions')){$('actions').hidden=true;$('more').setAttribute('aria-expanded','false');}});
+function requireClean(){preserveDraft();if(state.dirty||draft(state.page?.path)){toast('Save or discard your draft before renaming or deleting.');return false;}return !!state.page;}
+$('rename-page').onclick=()=>{
+  $('actions').hidden=true;if(!requireClean())return;const page=state.page;
+  formDialog('Rename / move page','Enter a new path for this Markdown file. Nested pages and links to the old path remain unchanged.',page.path,'Rename page',async target=>{const renamed=await api('rename',{path:page.path,target,revision:page.revision});await refreshPages();closeModal();go(renamed.path);toast('Page renamed');});
+};
+$('delete-page').onclick=()=>{
+  $('actions').hidden=true;if(!requireClean())return;const page=state.page;const body=modal('Move page to trash?');const p=document.createElement('p');p.textContent='“'+page.path+'” will be recoverable from Recently deleted. Nested pages remain in place.';body.append(p);
+  const row=document.createElement('div');row.className='dialog-buttons';row.innerHTML='<button class="subtle-button">Cancel</button><button class="primary-button">Move to trash</button>';body.append(row);row.children[0].onclick=closeModal;row.children[1].onclick=async()=>{row.children[1].disabled=true;try{await api('delete',{path:page.path,revision:page.revision});await refreshPages();closeModal();go(state.pages.find(p=>p.path==='Home')?.path||state.pages[0]?.path||'Home');toast('Page moved to trash');}catch(error){errorInto(body,error);row.children[1].disabled=false;}};
+};
+function discardDialog(){const body=modal('Discard unsaved draft?');body.innerHTML='<p>This removes the browser draft. The saved Markdown file stays as it is.</p><div class="dialog-buttons"><button class="subtle-button">Keep draft</button><button class="primary-button">Discard draft</button></div>';const buttons=body.querySelectorAll('button');buttons[0].onclick=closeModal;buttons[1].onclick=()=>{removeDraft(state.page.path);state.editing=false;state.dirty=false;closeModal();navigate(state.page.path);};}
+async function compare(){
+  const path=state.page?.path;if(!path)return;preserveDraft();const saved=draft(path);const local=state.editing?$('source').value:(saved?.content||'');const body=modal('Compare conflicting edits');
+  body.innerHTML='<p>Your draft is preserved. Copy any changes you want to keep into the editor. “Use merged draft” updates the expected revision; it does not save the page.</p>';
+  try{
+    const current=await api('page?path='+encodeURIComponent(path));
+    const add=(label,content)=>{const l=document.createElement('div');l.className='compare-label';l.textContent=label;const pre=document.createElement('pre');pre.className='compare';pre.textContent=content;body.append(l,pre);};
+    add('CURRENT FILE ON DISK',current.content);add('YOUR DRAFT',local);
+    const label=document.createElement('label');label.textContent='Merged draft (edit below)';label.className='compare-label';const merged=document.createElement('textarea');merged.className='compare';merged.style.width='100%';merged.style.minHeight='180px';merged.value=local;body.append(label,merged);
+    const row=document.createElement('div');row.className='dialog-buttons';row.innerHTML='<button class="subtle-button">Keep editing</button><button class="primary-button">Use merged draft</button>';body.append(row);row.children[0].onclick=closeModal;row.children[1].onclick=()=>{if(state.page?.path!==path)return closeModal();state.page=current;state.editing=true;state.base=current.revision;state.remote=false;$('source').value=merged.value;preserveDraft();setPreview(false);paintPage();notice('Merged draft is ready. Review it, then save.');closeModal();};
+  }catch(error){errorInto(body,error);}
+  const blob=new Blob([local],{type:'text/markdown'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.className='draft-download';a.textContent='Download your draft as Markdown';a.href=url;a.download=path.split('/').pop()+'.md';body.append(a);$('modal').addEventListener('close',()=>URL.revokeObjectURL(url),{once:true});
+}
+async function searchDialog(picker=false){
+  const body=modal(picker?'Link to a page':'Search your wiki');const input=document.createElement('input');input.type='search';input.placeholder=picker?'Find a page to link…':'Search titles and page contents…';input.setAttribute('aria-label',input.placeholder);body.append(input);const results=document.createElement('div');body.append(results);let sequence=0;
+  async function update(){const request=++sequence;try{const pages=await api('pages?q='+encodeURIComponent(input.value));if(request!==sequence)return;results.replaceChildren();if(!pages.length){results.innerHTML='<div class="empty">No pages found.</div>';return;}for(const p of pages){const b=document.createElement('button');b.className='result';b.innerHTML='<strong>▤ '+esc(p.path)+'</strong><small>'+esc(p.excerpt)+'</small>';b.onclick=()=>{closeModal();if(picker){const text='[['+p.path+']]';const editor=$('source');editor.setRangeText(text,editor.selectionStart,editor.selectionEnd,'end');preserveDraft();if(state.preview)setPreview(true);else editor.focus();}else go(p.path);};results.append(b);}}catch(error){errorInto(body,error);}}
+  let debounce;input.oninput=()=>{clearTimeout(debounce);sequence++;results.replaceChildren();debounce=setTimeout(update,130);};input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();results.querySelector('button')?.click();}};input.focus();await update();
+}
+$('search-open').onclick=()=>searchDialog();$('link-picker').onclick=()=>searchDialog(true);
+$('trash-open').onclick=async()=>{const body=modal('Recently deleted');body.innerHTML='<p>Deleted Markdown files are kept until you remove them from the data folder. Select a page to restore it.</p>';try{const pages=await api('trash');if(!pages.length){body.innerHTML+='<div class="empty">Nothing in the trash. A clean slate.</div>';return;}for(const page of pages){const b=document.createElement('button');b.className='result';b.innerHTML='<strong>↶ '+esc(page.path)+'</strong><small>Deleted '+esc(new Date(page.deleted).toLocaleString())+' · Restore page</small>';b.onclick=async()=>{b.disabled=true;try{const restored=await api('restore',{id:page.id});await refreshPages();closeModal();go(restored.path);toast('Page restored');}catch(error){errorInto(body,error);b.disabled=false;}};body.append(b);}}catch(error){errorInto(body,error);}};
+window.addEventListener('beforeunload',e=>{if(state.editing&&state.dirty){preserveDraft();e.preventDefault();e.returnValue='';}});
+window.addEventListener('storage',e=>{if(e.key?.startsWith(draftPrefix(state.page?.path))&&e.key!==draftKey(state.page?.path)&&state.editing&&e.newValue){notice('Another tab is editing this page. Each tab keeps its own draft; saving checks for conflicts.');}});
+document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();searchDialog();}if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'){e.preventDefault();save();}});
+// Refresh idle readers and flag external edits without replacing an editor's base revision.
+let checking=false;
+async function checkUpdates(){
+  if(checking||document.hidden||$('modal').open)return;checking=true;
+  try{await refreshPages();if(state.page){const path=state.page.path;const current=await api('page?path='+encodeURIComponent(path));if(state.page?.path!==path)return;if(current.revision===state.page.revision&&current.modified!==state.page.modified&&!state.editing){state.page=current;paintPage();}
+    if(current.revision!==state.page.revision){if(state.editing||draft(path)){state.remote=true;notice('This file changed on disk. Your draft is preserved.','Compare versions',compare);}else{state.page=current;paintPage();}}}}
+  catch(error){if(error.status===404&&state.editing)notice('This page was moved or deleted on disk. Your draft is preserved.','Download / compare draft',compare);}
+  finally{checking=false;}
+}
+window.addEventListener('focus',checkUpdates);setInterval(checkUpdates,10000);
+refreshPages().then(route).catch(error=>notice('Unable to connect to Homewiki: '+error.message));
