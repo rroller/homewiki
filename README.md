@@ -42,6 +42,8 @@ docker compose down
 
 `down` preserves the volume. `down -v` deletes it. The Python `data/` folder and Docker named volume are separate stores.
 
+A published `linux/amd64` image is available as `ghcr.io/rroller/homewiki:latest`, with commit-specific `sha-<full-commit>` tags. Publishing runs the storage/HTTP tests and a read-only container smoke test before pushing.
+
 See [Unraid instructions](UNRAID.md) for a bind-mounted appdata deployment.
 
 ## Private access

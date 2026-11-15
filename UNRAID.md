@@ -2,6 +2,20 @@
 
 Run `deploy-unraid.sh` on Unraid from this source folder. It creates a new `homewiki` container and `/mnt/user/appdata/homewiki` deployment, refusing to replace an existing container or directory. It builds the local Dockerfile; the initial build needs internet access for the Python base image.
 
+## Unraid template and published image
+
+The Unraid template is in [rroller/unraid-templates](https://github.com/rroller/unraid-templates/blob/master/ronnieroller.com/homewiki.xml). It uses `ghcr.io/rroller/homewiki:latest`, built for `linux/amd64` from this repository's `main` branch. Runtime changes trigger publishing after the storage/HTTP suite and a non-root, read-only container smoke test pass. A manual workflow run can also rebuild the image. Each build additionally publishes a `sha-<full-commit>` tag.
+
+Before the first template install, set **Allowed hosts** to your Unraid LAN IP or hostname (comma-separated, no scheme or port). Map `/data` to `/mnt/user/appdata/homewiki/data` and keep that folder across upgrades. For a fresh deployment, create it on Unraid with writable ownership for UID/GID 10001:
+
+```sh
+install -d -m 0700 -o 10001 -g 10001 /mnt/user/appdata/homewiki/data
+```
+
+For an existing deployment, reuse its data folder and preserve its ownership. Do not start two containers against the same wiki data directory. The template does not migrate or replace an existing container automatically. The host port defaults to 18080; the app has no authentication and should remain on a trusted private network.
+
+The source-build deployment script below remains available for users who prefer local images.
+
 ## Default: tunnel-only access
 
 ```sh
