@@ -1,0 +1,37 @@
+# Personal wiki content must never be committed, even outside the default data folder.
+*.[mM][dD]
+*.markdown
+*.mdown
+# Only these project documentation files belong in Git.
+!/README.md
+!/UNRAID.md
+
+# Runtime storage, deleted pages, and backups (including custom data layouts).
+data/
+pages/
+.trash/
+backups/
+backup/
+.initialized
+.lock
+image.txt
+before-*.json
+
+# Local configuration, secrets, developer tooling, and generated artifacts.
+.env
+.env.*
+*.pem
+*.key
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+playwright-report/
+test-results/
+screenshots/
+*.log
+*.zip
+*.tar
+*.tar.gz
+.DS_Store
