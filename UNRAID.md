@@ -6,7 +6,7 @@ Run `deploy-unraid.sh` on Unraid from this source folder. It creates a new `home
 
 The Unraid template is in [rroller/unraid-templates](https://github.com/rroller/unraid-templates/blob/master/ronnieroller.com/homewiki.xml). It uses `ghcr.io/rroller/homewiki:latest`, built for `linux/amd64` from this repository's `main` branch. Runtime changes trigger publishing after the storage/HTTP suite and a non-root, read-only container smoke test pass. A manual workflow run can also rebuild the image. Each build additionally publishes a `sha-<full-commit>` tag.
 
-Before the first template install, set **Allowed hosts** to your Unraid LAN IP or hostname (comma-separated, no scheme or port). Map `/data` to `/mnt/user/appdata/homewiki/data` and keep that folder across upgrades. For a fresh deployment, create it on Unraid with writable ownership for UID/GID 10001:
+Before the first template install, set **Allowed hosts** to your Unraid LAN IP or hostname (comma-separated, no scheme or port). Map `/data` to `/mnt/user/appdata/homewiki/data` and keep that folder across upgrades. Image uploads live in its `uploads/` subfolder; they use this same persistent bind mount and must be included in backups. For a fresh deployment, create it on Unraid with writable ownership for UID/GID 10001:
 
 ```sh
 install -d -m 0700 -o 10001 -g 10001 /mnt/user/appdata/homewiki/data

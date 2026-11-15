@@ -9,6 +9,8 @@
 # Runtime storage, deleted pages, and backups (including custom data layouts).
 data/
 pages/
+uploads/
+attachments/
 .trash/
 backups/
 backup/
