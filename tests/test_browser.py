@@ -147,6 +147,68 @@ class BrowserTests(unittest.TestCase):
         expect(p.locator('#notice')).to_contain_text('interrupted')
         expect(p.locator('#save-page')).to_be_enabled()
 
+    def test_nested_lists_preview_save_and_reload(self):
+        p=self.page
+        content="""# Nested lists
+
+- Games
+  - Completed
+    - **Celeste**
+    - [[Home]]
+  - Up next
+    3. Choose a game
+    4. Start playing
+- [ ] Reading
+  - [x] Chapter one
+  - [ ] Chapter two
+
+5. Planned
+   - Nested bullet
+6. Finished
+
+A paragraph after the lists.
+"""
+        p.locator('#edit-page').click();p.locator('#source').fill(content);p.locator('#tab-preview').click()
+        preview=p.locator('#preview')
+        expect(preview.locator(':scope > ul > li')).to_have_count(2)
+        expect(preview.locator(':scope > ul > li').first.locator(':scope > ul > li')).to_have_count(2)
+        expect(preview.locator('ul ul ul > li')).to_have_count(2)
+        expect(preview.locator('ul ul ul strong')).to_have_text('Celeste')
+        expect(preview.locator('ul ul ul a')).to_have_attribute('href','/page/Home')
+        expect(preview.locator('ul ol')).to_have_attribute('start','3')
+        expect(preview.locator(':scope > ol')).to_have_attribute('start','5')
+        expect(preview.locator(':scope > ol > li').first.locator('ul > li')).to_have_text('Nested bullet')
+        expect(preview.locator('input[type=checkbox]')).to_have_count(3)
+        expect(preview.locator('ul ul input[checked]')).to_have_count(1)
+        expect(preview.locator(':scope > p').last).to_have_text('A paragraph after the lists.')
+        p.locator('#save-page').click();expect(p.locator('#editor')).to_be_hidden()
+        p.reload();expect(p.locator('#content ul ul ul > li')).to_have_count(2)
+        expect(p.locator('#content ul ol')).to_have_attribute('start','3')
+        self.assertEqual(self.store.read('Home')['content'],content)
+    def test_list_indentation_continuations_and_code(self):
+        p=self.page
+        cases=[
+            ('- Parent\n    - Child\n        - Grandchild\n- Sibling','ul ul ul > li','Grandchild'),
+            ('- Parent\n\t- Child\n\t\t- Grandchild\n- Sibling','ul ul ul > li','Grandchild'),
+            ('1) Parent\n  - Child\n    7) Grandchild\n2) Sibling','ol ul ol[start="7"] > li','Grandchild'),
+        ]
+        for source,selector,text in cases:
+            with self.subTest(source=source):
+                p.locator('#content').evaluate('(node,source)=>node.innerHTML=markdown(source)',source)
+                expect(p.locator('#content').locator(selector)).to_have_text(text)
+                expect(p.locator('#content > ul > li, #content > ol > li')).to_have_count(2)
+        p.locator('#content').evaluate('(node,source)=>node.innerHTML=markdown(source)','- Parent\n  wrapped text\n\n  Second paragraph\n\n  ```\n  - code only <script>\n  ```\n- Sibling\n\nOutside paragraph')
+        expect(p.locator('#content > ul > li')).to_have_count(2)
+        expect(p.locator('#content > ul > li').first.locator(':scope > p')).to_have_count(2)
+        expect(p.locator('#content li pre code')).to_have_text('- code only <script>')
+        expect(p.locator('#content script')).to_have_count(0)
+        expect(p.locator('#content > p')).to_have_text('Outside paragraph')
+        p.locator('#content').evaluate('(node,source)=>node.innerHTML=markdown(source)','- One\n\n- Two\n\n1. Three\n2. Four\n\n---\n\nAfter')
+        expect(p.locator('#content > ul > li')).to_have_count(2)
+        expect(p.locator('#content > ol > li')).to_have_count(2)
+        expect(p.locator('#content > hr')).to_have_count(1)
+        expect(p.locator('#content > p')).to_have_text('After')
+
     def test_recent_edits_and_footer(self):
         p=self.page
         now=time.time()

@@ -86,7 +86,22 @@ Uploads insert ordinary Markdown such as `![Screenshot](/uploads/<unique-id>.png
 
 Images are ordinary files in `data/uploads/`, on the same persistent volume as the pages. Absolute upload URLs keep working after moving/renaming a page. Images are retained when a page is deleted, restored, or its draft is discarded, so recoverable pages and shared links do not lose their files. There is no automatic cleanup of unused uploads. Include `uploads/` in data backups. Uploaded assets are excluded from Git and from the image build context. External image URLs and raw HTML are not rendered or requested.
 
-The small Markdown renderer supports headings, paragraphs, bold, emphasis, strikethrough, inline/fenced code, basic lists, read-only task lists, blockquotes, tables, horizontal rules, and links. It is not full CommonMark: nested list formatting, raw HTML, and extensions are not rendered. HTML appears as text; remote images are not requested. External HTTP(S) links open separately when clicked.
+The small Markdown renderer supports headings, paragraphs, bold, emphasis, strikethrough, inline/fenced code, nested bullet and numbered lists, read-only task lists, blockquotes, tables, horizontal rules, and links. It is not full CommonMark: raw HTML and unsupported extensions are not rendered. HTML appears as text; remote images are not requested. External HTTP(S) links open separately when clicked.
+
+### Nested lists
+
+Indent child items with spaces or tabs. Two- and four-space bullet lists work, and bullet, numbered, and task lists can be mixed. Indented continuation paragraphs and fenced code stay inside their parent item. Numbered lists preserve their starting number; both `1.` and `1)` markers work.
+
+```markdown
+- Games
+  - Completed
+    - A favorite adventure
+  - Up next
+    1. Choose a game
+    2. Start playing
+- [ ] Reading
+  - [x] Finish the first chapter
+```
 
 ## Storage and durability
 
