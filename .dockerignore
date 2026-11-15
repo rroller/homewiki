@@ -1,0 +1,8 @@
+# Allow only runtime source into the image build context.
+**
+!Dockerfile
+!server.py
+!static/
+!static/index.html
+!static/app.js
+!static/style.css
