@@ -156,7 +156,7 @@ function markdown(source, hideTitle=false, depth=0) {
     if(line.includes('|')&&i+1<lines.length&&/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[i+1])) {
       const cells=s=>s.trim().replace(/^\||\|$/g,'').split('|').map(v=>v.trim());
       const headers=cells(line);
-      html+='<table><thead><tr>'+headers.map(c=>'<th>'+inline(c)+'</th>').join('')+'</tr></thead><tbody>';i+=2;
+      html+='<table><thead><tr>'+headers.map((c,column)=>'<th scope="col"><button type="button" class="table-sort" data-column="'+column+'" title="Sort ascending"><span>'+inline(c).replace(/<\/?a\b[^>]*>/g,'')+'</span><span class="table-sort-indicator" aria-hidden="true">↕</span></button></th>').join('')+'</tr></thead><tbody>';i+=2;
       while(i<lines.length&&lines[i].includes('|')&&lines[i].trim()){
         const row=cells(lines[i++]);
         html+='<tr>'+headers.map((_,column)=>'<td>'+inline(row[column]??'')+'</td>').join('')+'</tr>';
@@ -170,6 +170,34 @@ function markdown(source, hideTitle=false, depth=0) {
   }
   return html;
 }
+function sortMarkdownTable(button){
+  const table=button.closest('table');const header=button.closest('th');
+  const column=Number(button.dataset.column);const descending=header.getAttribute('aria-sort')==='ascending';
+  const body=table.tBodies[0];if(!body)return;
+  const rows=Array.from(body.rows,(row,index)=>({row,index,value:row.cells[column]?.textContent.trim()||''}));
+  const nonempty=rows.map(item=>item.value).filter(Boolean);
+  const numberPattern=/^[+-]?(?:(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
+  const number=value=>Number(value.replaceAll(',',''));
+  const numeric=nonempty.length>0&&nonempty.every(value=>numberPattern.test(value)&&Number.isFinite(number(value)));
+  const collator=new Intl.Collator(undefined,{numeric:true,sensitivity:'base'});
+  rows.sort((a,b)=>{
+    // Keep blanks last in either direction, and preserve ties' current order.
+    if(!a.value||!b.value)return Number(!a.value)-Number(!b.value)||a.index-b.index;
+    const compared=numeric?number(a.value)-number(b.value):collator.compare(a.value,b.value);
+    return (descending?-compared:compared)||a.index-b.index;
+  });
+  for(const cell of table.tHead.rows[0].cells){
+    cell.removeAttribute('aria-sort');const control=cell.querySelector('.table-sort');
+    if(control){control.title='Sort ascending';control.querySelector('.table-sort-indicator').textContent='↕';}
+  }
+  header.setAttribute('aria-sort',descending?'descending':'ascending');
+  button.title=descending?'Sort ascending':'Sort descending';button.querySelector('.table-sort-indicator').textContent=descending?'↓':'↑';
+  body.append(...rows.map(item=>item.row));
+}
+document.addEventListener('click',event=>{
+  const button=event.target.closest('.markdown button.table-sort');
+  if(button)sortMarkdownTable(button);
+});
 function notice(message, action, handler) {
   const box=$('notice');box.replaceChildren();box.hidden=!message;
   if(message)box.append(document.createTextNode(message));

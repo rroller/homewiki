@@ -90,6 +90,10 @@ Images are ordinary files in `data/uploads/`, on the same persistent volume as t
 
 The small Markdown renderer supports headings, paragraphs, bold, emphasis, strikethrough, inline/fenced code, nested bullet and numbered lists, read-only task lists, blockquotes, tables, horizontal rules, and links. It is not full CommonMark: raw HTML and unsupported extensions are not rendered. HTML appears as text; remote images are not requested. External HTTP(S) links open separately when clicked.
 
+### Tables
+
+Table headers stay on one line; wide tables scroll horizontally. Click a heading (or focus it and press Enter/Space) to sort ascending, then click again to sort descending. Numeric columns sort numerically; text uses case-insensitive natural ordering. Empty cells stay last in either direction. Sorting affects only the current preview or reading view and does not rewrite the Markdown.
+
 ### Nested lists
 
 Indent child items with spaces or tabs. Two- and four-space bullet lists work, and bullet, numbered, and task lists can be mixed. Indented continuation paragraphs and fenced code stay inside their parent item. Numbered lists preserve their starting number; both `1.` and `1)` markers work.
