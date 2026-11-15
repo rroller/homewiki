@@ -34,6 +34,39 @@ async function api(route, data) {
   if(!response.ok) { const error=new Error(result.error || 'Request failed'); error.status=response.status; throw error; }
   return result;
 }
+function webLink(href,label){
+  try{
+    const url=new URL(href);
+    if(!['http:','https:'].includes(url.protocol)||!url.hostname)return null;
+    return '<a href="'+esc(href)+'" target="_blank" rel="noopener noreferrer">'+esc(label)+'</a>';
+  }catch{return null;}
+}
+function trimLinkPunctuation(value){
+  let trimmed=value.replace(/[.,!?;:*_~]+$/g,'');
+  const pairs={')':'(',']':'[','}':'{'};
+  while(pairs[trimmed.at(-1)]){
+    const close=trimmed.at(-1),open=pairs[close];
+    if(trimmed.split(close).length<=trimmed.split(open).length)break;
+    trimmed=trimmed.slice(0,-1).replace(/[.,!?;:*_~]+$/g,'');
+  }
+  return trimmed;
+}
+function autoLinks(text,hold){
+  text=text.replace(/<(https?:\/\/[^\s<>\x00-\x1f]+)>/gi,(whole,url)=>{
+    const html=webLink(url,url);return html?hold(html):whole;
+  });
+  const candidates=/(?<![\w@/.:=\u005c-])(?:https?:\/\/[^\s<>"'\x60\u005c\x00-\x1f\u2018-\u201f\u00ab\u00bb]+|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?(?:[/?#][^\s<>"'\x60\u005c\x00-\x1f\u2018-\u201f\u00ab\u00bb]*)?)/gi;
+  const fileExtensions=new Set(['md','markdown','txt','json','yaml','yml','js','ts','css','html','htm','py','png','jpg','jpeg','gif','webp','svg','pdf','log']);
+  return text.replace(candidates,(whole)=>{
+    const label=trimLinkPunctuation(whole);const explicit=/^https?:\/\//i.test(label);
+    const href=explicit?label:'https://'+label;
+    if(!explicit){
+      try{if(fileExtensions.has(new URL(href).hostname.split('.').at(-1).toLowerCase()))return whole;}catch{return whole;}
+    }
+    const html=webLink(href,label);
+    return html?hold(html)+whole.slice(label.length):whole;
+  });
+}
 // Markdown is escaped. Only locally uploaded raster images are rendered.
 function inline(text) {
   const slots=[];
@@ -66,6 +99,7 @@ function inline(text) {
     }
     return hold('<a href="'+esc(href)+'"'+(external?' target="_blank" rel="noopener noreferrer"':'')+'>'+esc(label)+'</a>');
   });
+  text=autoLinks(text,hold);
   text=esc(text).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/__(.+?)__/g,'<strong>$1</strong>').replace(/\*([^*]+)\*/g,'<em>$1</em>').replace(/~~(.+?)~~/g,'<del>$1</del>');
   return text.replace(/\x01(\d+)\x02/g,(_,i)=>slots[Number(i)]||'');
 }

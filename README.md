@@ -70,6 +70,8 @@ Create nested pages with paths such as `Games/Completed games`. A folder may als
 
 Use `[[Games/Completed games]]` or `[[Games/Completed games|Finished games]]` to link from the wiki root. The editor's page-link picker inserts these links. Ordinary Markdown links resolve relative to the current page's folder; begin the target with `/` for a wiki-root-relative link. Paths are case-sensitive. Missing pages offer to create them.
 
+Plain web addresses such as `https://example.com`, `www.example.com`, and `example.com` become clickable; bare domains use HTTPS. Standard `[label](https://example.com)` links and `<https://example.com>` autolinks also work. Code spans/blocks and email addresses remain text. Click the Homewiki name at the top of the sidebar to return Home.
+
 Page URLs use `/page/Home` or `/page/Games/Completed%20games`. Direct links, refresh, and browser back/forward work. Older `/#/page/...` links open at their equivalent clean URL. Breadcrumb ancestors link back to parent pages and Home.
 
 Ctrl/Cmd+K opens search; Ctrl/Cmd+S saves an edit. Closing the editor retains its browser draft; Discard draft removes it. Rename/move changes only the selected Markdown file. Children and links to its old path remain unchanged, and existing destinations are never replaced.
