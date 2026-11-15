@@ -9,6 +9,32 @@ A lightweight, locally hosted personal wiki. Pages are ordinary UTF-8 Markdown f
 - Recoverable deleted pages, last-edit dates, and a Recently edited index.
 - Docker Compose and an optional Unraid deployment script with persistent storage.
 
+## Run on Unraid
+
+Use the published `ghcr.io/rroller/homewiki:latest` image with the [Homewiki Unraid template](https://github.com/rroller/unraid-templates/blob/master/ronnieroller.com/homewiki.xml). No local build or GHCR login is needed.
+
+1. For a **new** install, create the data directory in the Unraid terminal:
+
+   ```sh
+   install -d -m 0700 -o 10001 -g 10001 /mnt/user/appdata/homewiki/data
+   ```
+
+2. Install the template as `/boot/config/plugins/dockerMan/templates-user/my-homewiki.xml` using the [safe installation commands](UNRAID.md#2-install-the-user-template). An existing configured user template is kept intact.
+3. Open **Docker → Add Container**, select **homewiki**, and configure:
+
+   | Field | Value |
+   | --- | --- |
+   | Repository | `ghcr.io/rroller/homewiki:latest` |
+   | Web port | `18080` or another unused port |
+   | Wiki data | `/mnt/user/appdata/homewiki/data` → `/data`, read/write |
+   | Allowed hosts | Your Unraid IP and any wiki hostname, comma-separated; no scheme or port |
+
+4. Click **Apply**, enable **Autostart** if desired, and open the container's **WebUI**. The default URL is `http://YOUR_UNRAID_IP:18080/page/Home`.
+
+Keep the full `/data` mapping across updates: it contains pages, uploaded images, recoverable trash, and state. Use Unraid's **Check for Updates / Update** controls for new images; publishing to `:latest` does not automatically replace a running container. Back up the entire data folder with the app stopped. Homewiki has no built-in authentication, so keep access private or provide separate access controls.
+
+See the [full Unraid guide](UNRAID.md) for template installation, custom hostnames, backups, permissions, troubleshooting, and the optional source-build script.
+
 ## Run locally
 
 Requires Python 3.10+ on Linux or macOS (`fcntl` provides the file lock).
@@ -65,6 +91,8 @@ python3 server.py --host YOUR_LAN_IP --port 18080 --allow-host YOUR_LAN_IP
 Docker deployments can set `HOMEWIKI_ALLOWED_HOSTS` to the permitted IP/hostname and publish on that specific LAN address. Anyone who can reach the permitted endpoint can read and edit the wiki. Host/Origin checks and the mutation header protect against cross-origin browser requests; they are not authentication.
 
 ## Use the wiki
+
+The sidebar toolbar contains New page (pencil), Recently edited (clock), Search (magnifying glass), and the sidebar toggle. Only top-level page groups have collapse arrows; their nested pages stay expanded when the group is open.
 
 A leading `# Heading` supplies the visible page title and browser-tab title. Editing it updates the rendered title after saving. The heading is shown once at the top, rather than duplicated in the article. Without a leading H1, the filename supplies the page title and Markdown headings render in the article. Page paths, sidebar labels, and internal links continue to use the filename; use Rename / move to change them.
 

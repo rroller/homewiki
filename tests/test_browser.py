@@ -381,6 +381,58 @@ After the table.
         p.locator('#edit-page').click();p.locator('#source').fill('#   \n\nBody');p.locator('#save-page').click()
         expect(p.locator('#page-title')).to_have_text('Home')
 
+    def test_favicon_and_compact_sidebar_toolbar(self):
+        p=self.page
+        expect(p.locator('link[rel=icon][href="/favicon.png"]')).to_have_count(1)
+        expect(p.locator('link[rel=icon][href="/favicon.ico"]')).to_have_count(1)
+        p.locator('body').evaluate("body=>{const image=document.createElement('img');image.id='favicon-check';image.hidden=true;image.src='/favicon.png';body.append(image);}")
+        expect(p.locator('#favicon-check')).to_have_js_property('naturalWidth',128)
+        p.locator('#favicon-check').evaluate('node=>node.remove()')
+        toolbar=p.locator('.sidebar-tools')
+        expect(toolbar.get_by_role('button',name='New page',exact=True)).to_be_visible()
+        expect(toolbar.get_by_role('link',name='Recently edited',exact=True)).to_be_visible()
+        self.assertEqual(p.locator('#new-page').inner_text(),'')
+        self.assertEqual(p.locator('#recently-edited').inner_text(),'')
+        p.locator('#new-page').click();expect(p.locator('#modal-title')).to_have_text('Create a page');p.locator('#modal-close').click()
+        p.locator('#recently-edited').click();expect(p.locator('#page-title')).to_have_text('Recently edited')
+        expect(p.locator('#recently-edited')).to_have_attribute('aria-current','page')
+        for width in [1440,1000,800,390]:
+            p.set_viewport_size({'width':width,'height':900})
+            p.reload()
+            if width<721:p.locator('#expand').click()
+            sidebar=p.locator('#sidebar').bounding_box();brand=p.locator('.brand').bounding_box()
+            buttons=toolbar.locator('button,a').all()
+            self.assertEqual(len(buttons),4)
+            previous=None
+            for button in buttons:
+                box=button.bounding_box()
+                self.assertGreaterEqual(box['x'],brand['x'])
+                self.assertLessEqual(box['x']+box['width'],sidebar['x']+sidebar['width'])
+                if previous:self.assertGreaterEqual(box['x'],previous['x']+previous['width'])
+                previous=box
+            self.assertTrue(p.evaluate('document.documentElement.scrollWidth<=innerWidth'))
+    def test_only_top_level_page_groups_collapse(self):
+        p=self.page
+        self.store.save('Home/Unraid','# Unraid')
+        self.store.save('Home/Unraid/DDNS','# DDNS')
+        p.evaluate("localStorage.setItem('homewiki:folder:Home/Unraid','closed')")
+        p.reload()
+        root=p.locator('#tree').get_by_role('button',name='Toggle Home',exact=True)
+        expect(root).to_have_attribute('aria-expanded','true')
+        expect(p.locator('#tree').get_by_role('button',name='Toggle Unraid',exact=True)).to_have_count(0)
+        child=p.locator('#tree').get_by_role('link',name='DDNS',exact=False)
+        expect(child).to_be_visible()
+        root.click();expect(child).not_to_be_visible()
+        p.reload();expect(root).to_have_attribute('aria-expanded','false');expect(child).not_to_be_visible()
+        root.click();expect(child).to_be_visible()
+        child.click();expect(p.locator('#page-title')).to_have_text('DDNS')
+        # Nested items remain readable inside a modestly denser tree.
+        visible=p.locator('#tree .tree-row').filter(visible=True)
+        boxes=[row.bounding_box() for row in visible.all()]
+        for first,second in zip(boxes,boxes[1:]):
+            self.assertGreaterEqual(second['y'],first['y']+first['height'])
+            self.assertLessEqual(second['y']-first['y'],40)
+
     def test_recent_edits_and_footer(self):
         p=self.page
         now=time.time()
