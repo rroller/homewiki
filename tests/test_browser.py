@@ -209,6 +209,57 @@ A paragraph after the lists.
         expect(p.locator('#content > hr')).to_have_count(1)
         expect(p.locator('#content > p')).to_have_text('After')
 
+    def test_web_links_preview_save_and_reload(self):
+        p=self.page
+        content='# Links\n\nexample.com\n\nwww.example.com\n\nhttps://www.example.com\n\n[https://www.example.com](https://www.example.com)\n\n[Named link](https://www.example.com/path?q=one&x=two)\n\n<https://www.example.com/angle>\n'
+        expected=['https://example.com','https://www.example.com','https://www.example.com','https://www.example.com','https://www.example.com/path?q=one&x=two','https://www.example.com/angle']
+        p.locator('#edit-page').click();p.locator('#source').fill(content);p.locator('#tab-preview').click()
+        expect(p.locator('#preview a')).to_have_count(6)
+        self.assertEqual(p.locator('#preview a').evaluate_all('links=>links.map(a=>a.getAttribute("href"))'),expected)
+        expect(p.locator('#preview a a')).to_have_count(0)
+        for link in p.locator('#preview a').all():
+            expect(link).to_have_attribute('target','_blank')
+            expect(link).to_have_attribute('rel','noopener noreferrer')
+        p.locator('#save-page').click();expect(p.locator('#editor')).to_be_hidden()
+        p.reload();expect(p.locator('#content a')).to_have_count(6)
+        self.assertEqual(p.locator('#content a').evaluate_all('links=>links.map(a=>a.getAttribute("href"))'),expected)
+        self.assertEqual(self.store.read('Home')['content'],content)
+    def test_web_link_boundaries_code_and_escaping(self):
+        p=self.page
+        cases=[
+            ('Visit example.com.', ['https://example.com']),
+            ('"example.com" and “https://example.com”', ['https://example.com','https://example.com']),
+            ('See (https://example.com/path_(part)).', ['https://example.com/path_(part)']),
+            ('Try https://example.com/path?q=1&x=2, then example.org/docs#heading.', ['https://example.com/path?q=1&x=2','https://example.org/docs#heading']),
+            ('**https://example.com/bold**', ['https://example.com/bold']),
+            ('HTTP://example.com:8080 and www.example.org/help', ['HTTP://example.com:8080','https://www.example.org/help']),
+            ('[example.com](https://www.example.com) [[Games]]', ['https://www.example.com','/page/Games']),
+            ('\u0060https://example.com\u0060 name@example.com notes.md config.json /docs/example.com', []),
+            ('javascript:example.com ftp://example.com https://example.com:99999', []),
+            ('![example.com](https://example.com/tracker.png)', []),
+        ]
+        for source,expected in cases:
+            with self.subTest(source=source):
+                p.locator('#content').evaluate('(node,source)=>node.innerHTML=markdown(source)',source)
+                self.assertEqual(p.locator('#content a').evaluate_all('links=>links.map(a=>a.getAttribute("href"))'),expected)
+                expect(p.locator('#content a a')).to_have_count(0)
+        source='\u0060\u0060\u0060\nhttps://example.com\nexample.org\n\u0060\u0060\u0060\n\nhttps://example.com/?q=<script>alert(1)</script>'
+        p.locator('#content').evaluate('(node,source)=>node.innerHTML=markdown(source)',source)
+        expect(p.locator('#content pre a')).to_have_count(0)
+        expect(p.locator('#content script')).to_have_count(0)
+        expect(p.locator('#content [onerror], #content [onclick]')).to_have_count(0)
+        expect(p.locator('#content a')).to_have_count(1)
+    def test_sidebar_brand_returns_home_and_preserves_draft(self):
+        p=self.page
+        p.locator('#tree').get_by_role('link',name='Games I own',exact=False).click()
+        expect(p.locator('#page-title')).to_have_text('Games I own')
+        p.locator('#edit-page').click();p.locator('#source').fill('# A draft to keep')
+        brand=p.locator('#brand-home');expect(brand).to_have_attribute('href','/page/Home')
+        brand.focus();p.keyboard.press('Enter')
+        expect(p).to_have_url(self.url+'/page/Home');expect(p.locator('#page-title')).to_have_text('Home')
+        p.go_back();expect(p.locator('#source')).to_have_value('# A draft to keep')
+        p.locator('#brand-home').click();expect(p.locator('#page-title')).to_have_text('Home')
+
     def test_recent_edits_and_footer(self):
         p=self.page
         now=time.time()
