@@ -18,6 +18,37 @@ spec.loader.exec_module(app)
 
 PNG = base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1kAAAAASUVORK5CYII=')
 
+class VersionTests(unittest.TestCase):
+    def test_baked_revision_is_used_without_git(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            for revision in ['a'*40, 'b'*64]:
+                Path(directory, 'REVISION').write_text(revision+'\n')
+                with patch.object(app.subprocess,'run',side_effect=AssertionError('Git must not be required')):
+                    value=app.version_info(directory)
+                self.assertEqual(value,{'revision':revision,'commit_url':'https://github.com/rroller/homewiki/commit/'+revision,'dirty':False})
+
+    def test_local_checkout_marks_dirty_and_rejects_another_repository(self):
+        from unittest.mock import patch, Mock
+        with tempfile.TemporaryDirectory() as directory:
+            responses=[Mock(stdout=directory),Mock(stdout='c'*40),Mock(stdout=' M server.py')]
+            with patch.object(app.subprocess,'run',side_effect=responses):
+                value=app.version_info(directory)
+            self.assertEqual(value['revision'],'c'*40)
+            self.assertTrue(value['dirty'])
+            with patch.object(app.subprocess,'run',return_value=Mock(stdout=str(Path(directory).parent))):
+                self.assertIsNone(app.version_info(directory)['revision'])
+
+    def test_unknown_or_invalid_revision_does_not_invent_a_commit(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            for value in ['unknown','<script>alert(1)</script>']:
+                Path(directory,'REVISION').write_text(value)
+                with patch.object(app.subprocess,'run',side_effect=FileNotFoundError):
+                    result=app.version_info(directory)
+                self.assertEqual(result,{'revision':None,'commit_url':None,'dirty':False})
+
+
 class StoreTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
@@ -259,6 +290,12 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(self.request('/api/delete',page,headers)[0],200)
         status,raw,_=self.request('/api/trash');self.assertEqual(len(json.loads(raw)),1)
         self.assertEqual(self.request('/api/restore',{'id':json.loads(raw)[0]['id']},headers)[0],200)
+    def test_running_version_endpoint_is_read_only_and_host_protected(self):
+        status,raw,_=self.request('/api/version')
+        self.assertEqual(status,200)
+        self.assertEqual(json.loads(raw),app.RUNNING_VERSION)
+        self.assertEqual(self.request('/api/version',headers={'Host':'attacker.example'})[0],403)
+
     def test_favicon_assets(self):
         status,png,headers=self.request('/favicon.png')
         self.assertEqual(status,200);self.assertEqual(headers['Content-Type'],'image/png')

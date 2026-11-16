@@ -427,6 +427,33 @@ class BrowserTests(unittest.TestCase):
         p.set_viewport_size({'width':390,'height':844})
         self.assertTrue(p.evaluate('document.documentElement.scrollWidth<=innerWidth'))
 
+    def test_running_version_link_opens_the_exact_commit(self):
+        p=self.page
+        revision='0123456789abcdef0123456789abcdef01234567'
+        p.route('**/api/version',lambda route:route.fulfill(json={'revision':revision,'dirty':False}))
+        self.context.route('https://github.com/rroller/homewiki/commit/**',lambda route:route.fulfill(body='Commit preview',content_type='text/plain'))
+        p.reload()
+        link=p.locator('#build-version a')
+        expect(link).to_have_text(revision[:7])
+        expect(link).to_have_attribute('href','https://github.com/rroller/homewiki/commit/'+revision)
+        expect(link).to_have_attribute('rel','noopener noreferrer')
+        with p.expect_popup() as opened:
+            link.click()
+        expect(opened.value).to_have_url('https://github.com/rroller/homewiki/commit/'+revision)
+        opened.value.close()
+        self.assertNotIn('Markdown powered',p.locator('.local-note').inner_text())
+
+    def test_missing_version_metadata_does_not_block_the_wiki(self):
+        p=self.page
+        p.route('**/api/version',lambda route:route.fulfill(json={'revision':None,'dirty':False}))
+        p.reload();expect(p.locator('#build-version')).to_have_text('Development')
+        expect(p.locator('#build-version a')).to_have_count(0)
+        expect(p.locator('#content')).to_contain_text('Welcome to Homewiki')
+        p.unroute('**/api/version')
+        p.route('**/api/version',lambda route:route.fulfill(status=503,json={'error':'Unavailable'}))
+        p.reload();expect(p.locator('#build-version')).to_have_text('Version unavailable')
+        expect(p.locator('#content')).to_contain_text('Welcome to Homewiki')
+
     def test_full_wiki_workflow(self):
         p=self.page
         # Tree and nested example pages.

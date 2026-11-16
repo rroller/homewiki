@@ -1,8 +1,9 @@
 FROM python:3.14-slim
+ARG HOMEWIKI_REVISION=unknown
 WORKDIR /app
 COPY server.py bookmarks.py ./
 COPY static ./static
-RUN useradd --uid 10001 --create-home wiki && mkdir /data && chown wiki:wiki /data
+RUN printf '%s\n' "$HOMEWIKI_REVISION" > /app/REVISION && useradd --uid 10001 --create-home wiki && mkdir /data && chown wiki:wiki /data
 USER wiki
 ENV HOMEWIKI_DATA=/data PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 EXPOSE 8080

@@ -11,6 +11,7 @@ import re
 from pathlib import Path
 import shutil
 import sqlite3
+import subprocess
 from bookmarks import BookmarkStore, BookmarkError, normalize_url
 import tempfile
 import threading
@@ -24,6 +25,31 @@ MAX_BODY = 2 * 1024 * 1024
 MAX_IMAGE = 10 * 1024 * 1024
 IMAGE_TYPES = {'png': 'image/png', 'jpg': 'image/jpeg', 'gif': 'image/gif', 'webp': 'image/webp'}
 LOCAL_HOSTS = frozenset(('localhost', '127.0.0.1', '::1'))
+
+def version_info(source=None):
+    directory = Path(source or Path(__file__).parent).resolve()
+    revision, dirty = '', False
+    try:
+        revision = (directory / 'REVISION').read_text(encoding='ascii').strip().lower()
+    except (OSError, UnicodeError):
+        pass
+    if not re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})', revision):
+        revision = ''
+        try:
+            def git(*args):
+                return subprocess.run(['git', '-C', str(directory), *args], check=True, capture_output=True, text=True, timeout=2).stdout.strip()
+            if Path(git('rev-parse', '--show-toplevel')).resolve() == directory:
+                revision = git('rev-parse', 'HEAD').lower()
+                dirty = bool(git('status', '--porcelain', '--untracked-files=no'))
+        except (OSError, subprocess.SubprocessError):
+            revision = ''
+    if not re.fullmatch(r'(?:[0-9a-f]{40}|[0-9a-f]{64})', revision):
+        return {'revision': None, 'commit_url': None, 'dirty': False}
+    return {'revision': revision, 'commit_url': 'https://github.com/rroller/homewiki/commit/' + revision, 'dirty': dirty}
+
+
+RUNNING_VERSION = version_info()
+
 
 class Problem(Exception):
     def __init__(self, status, message):
@@ -405,7 +431,9 @@ class Handler(BaseHTTPRequestHandler):
             args = parse_qs(url.query)
             store = self.server.store
             if self.command == 'GET':
-                if url.path == '/api/bookmarks':
+                if url.path == '/api/version':
+                    data = RUNNING_VERSION
+                elif url.path == '/api/bookmarks':
                     data = store.bookmarks.listing(query=args.get('q', [''])[0], tags=args.get('tag', []),
                         domain=args.get('domain', [''])[0],
                         limit=int(args.get('limit', ['40'])[0]), offset=int(args.get('offset', ['0'])[0]),

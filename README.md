@@ -83,6 +83,13 @@ Requires Docker with the Compose plugin:
 docker compose up -d --build
 ```
 
+For a manual image build with a commit link, pass the revision as a build argument:
+
+```sh
+docker build --build-arg HOMEWIKI_REVISION="$(git rev-parse HEAD)" -t homewiki .
+```
+
+
 Open http://localhost:8080. Compose publishes only on `127.0.0.1`; the named `homewiki_data` volume persists pages and trash across container restarts and rebuilds. The container runs as a non-root user with a read-only app filesystem.
 
 ```sh
@@ -192,6 +199,8 @@ Open **••• → Page history** to browse earlier saved versions. Choose a v
 Homewiki snapshots the current Markdown before each changed save, restore, or deletion. Existing pages get their first earlier version when next changed; unchanged saves do not add entries. Renames copy history to the new path, and recovering a page from trash keeps its history. Versions belong to page paths, so reusing an old path also makes its earlier versions available.
 
 History uses Markdown snapshots and JSON metadata under the persistent data folder's hidden .history directory. It has no automatic expiry; include it in backups and allow space for saved versions. File edits made outside Homewiki are captured only when their current content is subsequently changed or deleted through Homewiki. Intermediate external edits cannot be reconstructed.
+
+The bottom of the sidebar shows the running version’s short Git hash and links to its GitHub commit. Published images embed the exact build revision. Local checkouts use their revision at startup; an asterisk marks uncommitted changes. Source copies without build metadata show **Development**.
 
 ## Storage and durability
 
