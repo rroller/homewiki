@@ -38,7 +38,7 @@ function navigateBookmarks(){
   view.append(toolbar);
   if(mode==='add'||mode==='tools'){
     if(mode==='add'){
-      const intro=bmElement('p','bookmark-capture-intro','Review the link, add any tags or notes, then save it to your library.');view.append(intro);
+      const intro=bmElement('p','bookmark-capture-intro','Review the link, add any tags, then save it to your library.');view.append(intro);
       const mount=bmElement('div','bookmark-capture-form');view.append(mount);
       bookmarkForm(null,{mount,prefill:bookmarkCaptureValues(params)});
     }else renderBookmarkTools(view);
@@ -104,7 +104,6 @@ function bookmarkCard(bookmark,filter){
   const title=bookmarkLink(bookmark.title,bookmark.url,'bookmark-title');title.target='_blank';title.rel='noopener noreferrer';
   const url=bmElement('p','bookmark-address',bookmark.url);url.title=bookmark.url;
   card.append(title,url);
-  if(bookmark.description)card.append(bmElement('p','bookmark-description',bookmark.description));
   const metadata=bmElement('div','bookmark-metadata');
   metadata.append(bookmarkLink(bookmark.domain,bookmarkURL({domain:bookmark.domain}),'bookmark-domain'));
   const time=document.createElement('time');time.dateTime=bookmark.created_at;time.textContent='Saved '+editDate(bookmark.created_at);time.title=new Date(bookmark.created_at).toString();metadata.append(time);card.append(metadata);
@@ -141,7 +140,7 @@ function bookmarkText(id){
 }
 async function bookmarkForm(id=null,options={}){
   const embedded=Boolean(options.mount),body=options.mount||modal(id?'Edit bookmark':'Add bookmark'),view=bmElement('div');view.textContent='Loading…';body.append(view);
-  let bookmark={url:'',title:'',description:'',tags:[],revision:null};
+  let bookmark={url:'',title:'',tags:[],revision:null};
   try{if(id)bookmark=await api('bookmarks/item?id='+id);}catch(error){view.replaceChildren();errorInto(view,error);return;}
   const present=()=>view.isConnected&&(embedded?state.bookmarks&&location.pathname==='/bookmarks/add':$('modal').open);
   if(!present())return;
@@ -162,12 +161,12 @@ async function bookmarkForm(id=null,options={}){
   }
   const initial=recovered||{...bookmark,extract:!id,...(options.prefill||{})};
   const form=document.createElement('form');form.id='bookmark-form';
-  form.innerHTML='<label for="bookmark-url">Web address</label><input id="bookmark-url" type="text" required maxlength="4096" placeholder="https://example.com"><label for="bookmark-title">Title (optional)</label><input id="bookmark-title" type="text" maxlength="300" placeholder="Leave blank to use the page title"><p id="bookmark-title-status" class="bookmark-form-hint" role="status"></p><label for="bookmark-description">Short description</label><textarea id="bookmark-description" maxlength="2000" rows="3"></textarea><label for="bookmark-tags">Tags</label><input id="bookmark-tags" type="text"><p class="bookmark-form-hint">Separate tags with commas. Multiword tags are welcome.</p><label class="bookmark-extract"><input id="bookmark-extract" type="checkbox"> Save page text for search</label><p class="bookmark-form-hint">Optional. Reads public HTML or text pages; links can be saved even if extraction fails.</p><p id="bookmark-draft-status" role="status"></p><div class="dialog-buttons"><button type="button" class="subtle-button" id="bookmark-cancel">Cancel</button><button class="primary-button" type="submit">Save bookmark</button></div>';
+  form.innerHTML='<label for="bookmark-url">Web address</label><input id="bookmark-url" type="text" required maxlength="4096" placeholder="https://example.com"><label for="bookmark-title">Title (optional)</label><input id="bookmark-title" type="text" maxlength="300" placeholder="Leave blank to use the page title"><p id="bookmark-title-status" class="bookmark-form-hint" role="status"></p><label for="bookmark-tags">Tags</label><input id="bookmark-tags" type="text"><p class="bookmark-form-hint">Separate tags with commas. Multiword tags are welcome.</p><label class="bookmark-extract"><input id="bookmark-extract" type="checkbox"> Save page text for search</label><p class="bookmark-form-hint">Optional. Reads public HTML or text pages; links can be saved even if extraction fails.</p><p id="bookmark-draft-status" role="status"></p><div class="dialog-buttons"><button type="button" class="subtle-button" id="bookmark-cancel">Cancel</button><button class="primary-button" type="submit">Save bookmark</button></div>';
   view.append(form);
-  $('bookmark-url').value=initial.url||'';$('bookmark-title').value=initial.title||'';$('bookmark-description').value=initial.description||'';$('bookmark-tags').value=Array.isArray(initial.tags)?initial.tags.join(', '):'';$('bookmark-extract').checked=Boolean(initial.extract);
+  $('bookmark-url').value=initial.url||'';$('bookmark-title').value=initial.title||'';$('bookmark-tags').value=Array.isArray(initial.tags)?initial.tags.join(', '):'';$('bookmark-extract').checked=Boolean(initial.extract);
   if(recovered)$('bookmark-draft-status').textContent='Recovered your bookmark draft.';
   let titleEdited=recovered?.titleEdited??Boolean(initial.title),titleSequence=0,titleTimer,lookupRunning=false,queuedLookup=null,runningLookup=null,lastLookup=null,titleCache=new Map(),submitting=false;
-  const values=()=>({id:id||undefined,url:$('bookmark-url').value,title:$('bookmark-title').value,description:$('bookmark-description').value,tags:$('bookmark-tags').value.split(',').map(tag=>tag.trim()).filter(Boolean),extract:$('bookmark-extract').checked,revision:recovered?recovered.revision:bookmark.revision,titleEdited,updated:Date.now()});
+  const values=()=>({id:id||undefined,url:$('bookmark-url').value,title:$('bookmark-title').value,tags:$('bookmark-tags').value.split(',').map(tag=>tag.trim()).filter(Boolean),extract:$('bookmark-extract').checked,revision:recovered?recovered.revision:bookmark.revision,titleEdited,updated:Date.now()});
   form.oninput=()=>{$('bookmark-draft-status').textContent=setStored(key,JSON.stringify(values()))?'Draft saved in this browser.':'Browser storage unavailable; keep this dialog open.';};
   const urlField=$('bookmark-url'),titleField=$('bookmark-title'),titleStatus=$('bookmark-title-status');
   const active=()=>present()&&!submitting;
@@ -227,7 +226,7 @@ async function bookmarkForm(id=null,options={}){
           try{
             const latest=await api('bookmarks/item?id='+id);if(!view.isConnected)return;
             const panel=bmElement('div','bookmark-conflict');
-            panel.append(bmElement('strong','','Latest saved bookmark'),bmElement('p','',latest.title+'\n'+latest.url+'\n'+latest.description+'\nTags: '+latest.tags.join(', ')));
+            panel.append(bmElement('strong','','Latest saved bookmark'),bmElement('p','',latest.title+'\n'+latest.url+'\nTags: '+latest.tags.join(', ')));
             const reviewed=bmElement('button','subtle-button','Use my reviewed draft');
             reviewed.onclick=()=>{bookmark.revision=latest.revision;recovered=null;setStored(key,JSON.stringify(values()));panel.replaceChildren(bmElement('p','','Review your fields above, then Save bookmark to replace this version.'));};
             panel.append(reviewed);view.append(panel);reload.remove();
@@ -243,9 +242,8 @@ async function bookmarkForm(id=null,options={}){
 function bookmarkCaptureValues(params){
   const text=params.get('text')||'';
   const url=params.get('url')||(text.match(/https?:\/\/[^\s<>"\u0000-\u001f]+/i)?.[0]||'');
-  const description=params.has('description')?params.get('description'):text.replace(url,'').trim();
   const tags=[...(params.get('tags')||'').split(','),...params.getAll('tag')].map(value=>value.trim()).filter(Boolean);
-  return {url,title:(params.get('title')||'').trim().slice(0,300),description:(description||'').slice(0,2000),tags,
+  return {url,title:(params.get('title')||'').trim().slice(0,300),tags,
     extract:!['0','false'].includes((params.get('extract')||'').toLowerCase())};
 }
 function showBookmarkCaptureSuccess(mount,bookmark){
@@ -261,7 +259,7 @@ function showBookmarkCaptureSuccess(mount,bookmark){
   mount.append(card);
 }
 function homewikiBookmarklet(base=location.origin+'/bookmarks/add'){
-  return 'javascript:void(function(){var p=new URLSearchParams({url:location.href,title:document.title.slice(0,300),description:String(window.getSelection?window.getSelection():"").trim().slice(0,2000)});location.assign('+JSON.stringify(base)+'+"?"+p.toString());}());';
+  return 'javascript:void(function(){var p=new URLSearchParams({url:location.href,title:document.title.slice(0,300)});location.assign('+JSON.stringify(base)+'+"?"+p.toString());}());';
 }
 async function copyBookmarkTool(area,message){
   try{
@@ -271,7 +269,7 @@ async function copyBookmarkTool(area,message){
   }catch{area.focus();area.select();area.setSelectionRange(0,area.value.length);toast('Select Copy to copy the highlighted text.');}
 }
 function renderBookmarkTools(view){
-  view.append(bmElement('p','bookmark-capture-intro','Save the page you are reading to Homewiki, then review its title, notes, and tags before saving.'));
+  view.append(bmElement('p','bookmark-capture-intro','Save the page you are reading to Homewiki, then review its title and tags before saving.'));
   const setup=bmElement('section','bookmark-tool-card');
   setup.append(bmElement('h2','','Save to Homewiki bookmarklet'));
   const install=bookmarkLink('Save to Homewiki',homewikiBookmarklet(),'bookmarklet-install');install.id='install-bookmarklet';install.draggable=true;
@@ -299,6 +297,6 @@ function renderBookmarkTools(view){
   const field=document.createElement('input');field.type='text';field.id='bookmark-capture-address';field.readOnly=true;field.value=address;
   const copyAddress=bmElement('button','outline-button','Copy capture address');copyAddress.type='button';copyAddress.onclick=()=>copyBookmarkTool(field,'Capture address copied');
   const example=bmElement('pre','bookmark-tool-example',address+'?url='+encodeURIComponent('https://example.com/article')+'&title='+encodeURIComponent('Article title'));
-  integration.append(addressLabel,field,copyAddress,example,bmElement('p','bookmark-form-hint','Pass URL-encoded url and optional title, description, tags, or repeated tag parameters. A text parameter can contain a shared URL and notes. Omit title to look it up automatically. Add extract=0 to start without page-text saving. Opening the address never saves a bookmark automatically.'));
+  integration.append(addressLabel,field,copyAddress,example,bmElement('p','bookmark-form-hint','Pass URL-encoded url and optional title, tags, or repeated tag parameters. A text parameter can contain a shared URL. Omit title to look it up automatically. Add extract=0 to start without page-text saving. Opening the address never saves a bookmark automatically.'));
   view.append(integration);
 }

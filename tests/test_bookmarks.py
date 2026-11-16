@@ -25,7 +25,7 @@ class BookmarkTests(unittest.TestCase):
 
     def save(self, **values):
         return self.store.save({'url': 'https://example.com/guide', 'title': 'Useful guide',
-                                'description': 'Notes for next weekend', 'tags': ['Python', 'reading'], **values})
+                                'tags': ['Python', 'reading'], **values})
 
     def test_crud_tags_domain_recency_and_restart(self):
         first = self.save()
@@ -36,20 +36,20 @@ class BookmarkTests(unittest.TestCase):
         self.assertEqual(self.store.listing(tags=['python'], domain='example.com')['total'], 2)
         self.assertEqual(self.store.listing(tags=['python', 'home lab'])['total'], 1)
         self.assertEqual(self.store.groups('domains'), [{'name': 'example.com', 'count': 2}])
-        edited = self.save(id=first['id'], revision=first['revision'], description='An edited description', tags=['wiki'])
+        edited = self.save(id=first['id'], revision=first['revision'], title='An edited title', tags=['wiki'])
         self.assertEqual(edited['created_at'], first['created_at'])
         self.assertNotEqual(edited['revision'], first['revision'])
         restarted = app.BookmarkStore(self.temp.name)
         self.assertEqual(restarted.get(first['id']), edited)
         self.assertEqual(restarted.listing(tags=['reading'])['total'], 0)
-        self.assertEqual(restarted.listing('edited description')['total'], 1)
+        self.assertEqual(restarted.listing('edited title')['total'], 1)
         self.assertEqual(Path(self.temp.name, 'bookmarks.sqlite3').stat().st_mode & 0o777, 0o600)
 
     def test_search_saved_text_and_manual_metadata(self):
         with patch.object(app, 'fetch_page_text', return_value={'title': 'Extracted title', 'text': 'Café telescope astronomy research'}):
-            saved = self.save(title='', extract=True, description='My own notes')
+            saved = self.save(title='', extract=True)
         self.assertEqual(saved['title'], 'Extracted title')
-        self.assertEqual(saved['description'], 'My own notes')
+        self.assertNotIn('description', saved)
         self.assertEqual(saved['extraction_status'], 'saved')
         self.assertTrue(saved['extracted_at'])
         self.assertEqual(self.store.listing('cafe astro')['total'], 1)
@@ -80,7 +80,7 @@ class BookmarkTests(unittest.TestCase):
         with patch.object(app, 'fetch_page_text', side_effect=app.BookmarkError(400, 'Site unavailable')):
             saved = self.save(title='')
         self.assertEqual(saved['title'], 'example.com')
-        self.assertEqual(saved['description'], 'Notes for next weekend')
+        self.assertNotIn('description', saved)
         self.assertEqual(saved['extraction_status'], 'not_requested')
 
     def test_title_only_page_keeps_title_when_text_extraction_fails(self):
@@ -94,7 +94,7 @@ class BookmarkTests(unittest.TestCase):
         with patch.object(app, 'fetch_page_text', side_effect=app.BookmarkError(400, 'Site unavailable')):
             failed = self.save(extract=True)
         self.assertEqual(failed['extraction_status'], 'failed')
-        self.assertEqual(failed['description'], 'Notes for next weekend')
+        self.assertNotIn('description', failed)
         with patch.object(app, 'fetch_page_text', return_value={'title': 'Other title', 'text': 'Searchable old archive'}):
             good = self.store.refresh_text(failed['id'], failed['revision'])
         self.assertEqual(good['title'], failed['title'])
@@ -143,7 +143,7 @@ class BookmarkTests(unittest.TestCase):
         first = self.save()
         def edit(i):
             try:
-                self.save(id=first['id'], revision=first['revision'], description=str(i))
+                self.save(id=first['id'], revision=first['revision'], title=str(i))
                 return 200
             except app.BookmarkError as error:
                 return error.status
@@ -156,13 +156,13 @@ class BookmarkTests(unittest.TestCase):
     def test_refresh_checks_revision_after_network_fetch(self):
         first = self.save()
         def fetch(url, **options):
-            self.save(id=first['id'], revision=first['revision'], description='Another browser')
+            self.save(id=first['id'], revision=first['revision'], title='Another browser')
             return {'title': 'Fetched', 'text': 'This must not overwrite newer data'}
         with patch.object(app, 'fetch_page_text', side_effect=fetch):
             with self.assertRaises(app.BookmarkError) as caught:
                 self.store.refresh_text(first['id'], first['revision'])
         self.assertEqual(caught.exception.status, 409)
-        self.assertEqual(self.store.get(first['id'])['description'], 'Another browser')
+        self.assertEqual(self.store.get(first['id'])['title'], 'Another browser')
         self.assertEqual(self.store.get(first['id'])['page_text'], '')
 
     def test_pagination_sorting_and_validation(self):
@@ -175,6 +175,33 @@ class BookmarkTests(unittest.TestCase):
         for data in [{'url': 'javascript:alert(1)'}, {'tags': 'python'}, {'title': 'x'*301}, {'extract': 'yes'}, {'id': ''}]:
             with self.assertRaises(app.BookmarkError):
                 self.save(**data)
+
+    def test_existing_database_drops_descriptions_and_rebuilds_search(self):
+        with patch.object(app, 'fetch_page_text', return_value={'title': 'Archive', 'text': 'Searchable telescope archive'}):
+            saved = self.save(extract=True)
+        # Recreate the preceding schema, including text indexed only as a description.
+        with self.store.connection() as connection:
+            connection.execute("ALTER TABLE bookmarks ADD COLUMN description TEXT NOT NULL DEFAULT ''")
+            connection.execute("UPDATE bookmarks SET description='obsoleteword' WHERE id=?", (saved['id'],))
+            connection.execute('DROP TABLE bookmark_search')
+            connection.execute('CREATE VIRTUAL TABLE bookmark_search USING fts5(title,url,description,tags,page_text)')
+            connection.execute("INSERT INTO bookmark_search(rowid,title,url,description,tags,page_text) SELECT rowid,title,url,description,tags,page_text FROM bookmarks")
+        for _ in range(2):
+            reopened = app.BookmarkStore(self.temp.name)
+            self.assertEqual(reopened.get(saved['id']), saved)
+            self.assertEqual(reopened.listing('obsoleteword')['total'], 0)
+            for term in [saved['title'].split()[0], 'guide', 'python', 'telescope']:
+                self.assertEqual(reopened.listing(term)['total'], 1)
+            self.assertIn('telescope', reopened.listing('telescope')['items'][0]['excerpt'])
+            self.assertEqual(reopened.groups('tags'), self.store.groups('tags'))
+            with reopened.connection() as connection:
+                for table in ['bookmarks', 'bookmark_search']:
+                    self.assertNotIn('description', [row[1] for row in connection.execute('PRAGMA table_info('+table+')')])
+                self.assertEqual(connection.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
+            edited = reopened.save({**saved, 'title': 'Updated title', 'description': 'Ignored old client field'})
+            self.assertNotIn('description', edited)
+            self.assertEqual(reopened.listing('ignored')['total'], 0)
+            saved = edited
 
     def test_database_symlink_and_existing_foreign_file_are_protected(self):
         other = Path(self.temp.name, 'other')

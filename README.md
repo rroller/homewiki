@@ -10,7 +10,7 @@ Homewiki is a lightweight, locally hosted personal wiki. Wiki pages are ordinary
 - Markdown pages with nested folders, drag-and-drop sidebar ordering, internal links, search, and image uploads.
 - Browser editor with preview, draft recovery, edit conflicts, page history, and version restore.
 - Sortable tables, nested lists, clickable breadcrumbs, and a Recently edited index.
-- A bookmark library with editable descriptions, tags, original bookmark dates, and browsing by tag or domain.
+- A bookmark library with editable titles, tags, original bookmark dates, and browsing by tag or domain.
 - Page titles fill in while adding a URL and remain editable. Page-text saving is enabled by default for new bookmarks, with full-text search across saved text and bookmark details.
 - Recoverable deleted wiki pages; bookmark deletion is permanent.
 - Docker Compose and Unraid support with persistent storage.
@@ -30,7 +30,7 @@ Example content in the current interface. Images follow your light or dark theme
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/bookmarks-dark.png">
-  <img src="docs/images/bookmarks-light.png" alt="Homewiki bookmark library with saved page titles, descriptions, tags, domain links, original save dates, and full-text search" width="1440">
+  <img src="docs/images/bookmarks-light.png" alt="Homewiki bookmark library with saved page titles, tags, domain links, original save dates, and full-text search" width="1440">
 </picture>
 
 ## Run on Unraid
@@ -174,15 +174,15 @@ Indent child items with spaces or tabs. Two- and four-space bullet lists work, a
 
 ## Bookmarks
 
-Open **Bookmarks** in the sidebar, then **Add bookmark**. Save a web address, an optional title, an editable short description, and comma-separated tags. After you type or paste a public URL, its title is filled into the form for you to review and edit. Changing the URL replaces an automatically filled title, while a title you have edited is kept. If unavailable, you can enter a title yourself or leave it blank to use the domain. Tags are case-insensitive and may contain spaces. The original bookmark time stays the same when you edit its details.
+Open **Bookmarks** in the sidebar, then **Add bookmark**. Save a web address, an optional title and comma-separated tags. After you type or paste a public URL, its title is filled into the form for you to review and edit. Changing the URL replaces an automatically filled title, while a title you have edited is kept. If unavailable, you can enter a title yourself or leave it blank to use the domain. Tags are case-insensitive and may contain spaces. The original bookmark time stays the same when you edit its details.
 
 - **Recent** lists newly bookmarked links first. You can also sort by oldest first or title.
 - **Tags** shows all tags and their bookmark counts. Click one to browse its links; clicking another tag on a bookmark narrows the list to links carrying both tags.
 - **Domains** groups links by hostname. Click a domain on a bookmark or on the domain index to see its links. The www prefix is ignored; other subdomains remain separate.
-- Search matches words across titles, URLs, descriptions, tags, and saved page text. Words use prefix matching and are combined; search can be combined with tag and domain filters. Filters are in the URL, so reload and browser history work.
+- Search matches words across titles, URLs, tags, and saved page text. Words use prefix matching and are combined; search can be combined with tag and domain filters. Filters are in the URL, so reload and browser history work.
 - **Delete** permanently removes a bookmark, its tags, and its saved page text after confirmation. Duplicate URLs are rejected while bookmarked; after deletion, a URL can be added again.
 
-**Save page text for search** is checked by default for new bookmarks; uncheck it if you only want the link and title. **Save page text / Refresh text** on an existing bookmark retries extraction; **View text** shows what was saved. Extracted titles are used only when you leave the title empty. A failed fetch still saves your link and notes; a failed refresh keeps previously extracted text. Changing the URL clears text from the old address.
+**Save page text for search** is checked by default for new bookmarks; uncheck it if you only want the link and title. **Save page text / Refresh text** on an existing bookmark retries extraction; **View text** shows what was saved. Extracted titles are used only when you leave the title empty. A failed fetch still saves your link and tags; a failed refresh keeps previously extracted text. Changing the URL clears text from the old address.
 
 Extraction reads public HTML or plain-text pages without cookies, credentials, scripts, or browser rendering. Private/LAN links can be bookmarked normally, but their text is not fetched. Each extraction accepts up to 2 MiB of source and stores up to 300,000 characters; login-only, compressed-only, or JavaScript-dependent pages may not yield useful text.
 
@@ -215,12 +215,11 @@ The dedicated page is **/bookmarks/add**. Opening it only prepares a form; savin
 | --- | --- |
 | url | The page address, URL-encoded. |
 | title | Optional prefilled title; omitted titles are looked up automatically. |
-| description | Optional notes or selected text. |
-| text | Shared text; if url is omitted, its first HTTP(S) URL is used and the remainder becomes notes. |
+| text | Shared text; if url is omitted, its first HTTP(S) URL is used. |
 | tags | Optional comma-separated tags. Repeated tag parameters also work. |
 | extract | Page-text saving defaults on; use 0 or false to start unchecked. |
 
-Titles, notes, and tags remain editable. Capture drafts are kept separately for each shared URL and do not replace an unfinished bookmark in the normal Add dialog. A successful save clears the source parameters so reloading does not submit or repeat it. The capture page does not follow return-URL parameters or save/edit a bookmark from query parameters alone.
+Titles and tags remain editable. Capture drafts are kept separately for each shared URL and do not replace an unfinished bookmark in the normal Add dialog. A successful save clears the source parameters so reloading does not submit or repeat it. The capture page does not follow return-URL parameters or save/edit a bookmark from query parameters alone.
 
 ## Page history
 

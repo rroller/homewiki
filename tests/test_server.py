@@ -393,7 +393,7 @@ class HTTPTests(unittest.TestCase):
 
     def test_bookmark_http_lifecycle_search_and_request_guards(self):
         headers={'Content-Type':'application/json','X-Homewiki':'1'}
-        body={'url':'https://example.com/http-bookmark','title':'HTTP bookmark','description':'A searchable bookmark','tags':['web','reading']}
+        body={'url':'https://example.com/http-bookmark','title':'A searchable HTTP bookmark','tags':['web','reading']}
         self.assertEqual(self.request('/api/bookmarks/save',body)[0],403)
         self.assertEqual(self.request('/api/bookmarks/save',body,{**headers,'Origin':'https://attacker.example'})[0],403)
         status,raw,_=self.request('/api/bookmarks/save',body,headers)
@@ -402,7 +402,7 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(status,200);self.assertEqual(json.loads(raw)['total'],1)
         self.assertEqual(json.loads(self.request('/api/bookmarks/tags')[1]),[{'name':'reading','count':1},{'name':'web','count':1}])
         self.assertEqual(json.loads(self.request('/api/bookmarks/domains')[1]),[{'name':'example.com','count':1}])
-        self.assertEqual(json.loads(self.request('/api/bookmarks/item?id='+item['id'])[1])['description'],body['description'])
+        self.assertNotIn('description',json.loads(self.request('/api/bookmarks/item?id='+item['id'])[1]))
         self.assertEqual(self.request('/api/bookmarks/save',body,headers)[0],409)
         status,raw,_=self.request('/api/bookmarks/delete',{'id':item['id'],'revision':item['revision']},headers)
         self.assertEqual(status,200);deleted=json.loads(raw)
