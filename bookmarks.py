@@ -270,6 +270,9 @@ class BookmarkStore:
                         CREATE VIRTUAL TABLE IF NOT EXISTS bookmark_search USING fts5(
                             title,url,description,tags,page_text,tokenize='unicode61 remove_diacritics 2'
                         );
+                        DELETE FROM bookmark_search WHERE rowid IN (SELECT rowid FROM bookmarks WHERE deleted_at IS NOT NULL);
+                        DELETE FROM bookmark_tags WHERE bookmark_id IN (SELECT id FROM bookmarks WHERE deleted_at IS NOT NULL);
+                        DELETE FROM bookmarks WHERE deleted_at IS NOT NULL;
                         COMMIT;
                     """)
                     setup.commit()
@@ -365,17 +368,16 @@ class BookmarkStore:
                 self.index(connection, token)
                 return self.serialize(self.item(connection, token))
         except sqlite3.IntegrityError:
-            raise BookmarkError(409, 'This link is already bookmarked, possibly in Deleted. Edit or restore the existing bookmark instead.')
+            raise BookmarkError(409, 'This link is already bookmarked. Edit the existing bookmark instead.')
 
-    def remove(self, token, revision, restore=False):
+    def remove(self, token, revision):
         with self.connection() as connection:
             connection.execute('BEGIN IMMEDIATE')
             row = self.item(connection, token)
             self.check(row, revision)
-            now = datetime.now(timezone.utc).isoformat()
-            connection.execute('UPDATE bookmarks SET deleted_at=?,updated_at=?,revision=? WHERE id=?',
-                               (None if restore else now, now, uuid.uuid4().hex, token))
-            return self.serialize(self.item(connection, token))
+            connection.execute('DELETE FROM bookmark_search WHERE rowid=?', (row['rowid'],))
+            connection.execute('DELETE FROM bookmarks WHERE id=?', (token,))
+            return {'id': token}
 
     def refresh_text(self, token, revision):
         row = self.get(token)
@@ -394,7 +396,7 @@ class BookmarkStore:
             self.index(connection, token)
             return self.serialize(self.item(connection, token))
 
-    def listing(self, query='', tags=None, domain='', deleted=False, limit=40, offset=0, sort='newest'):
+    def listing(self, query='', tags=None, domain='', limit=40, offset=0, sort='newest'):
         if not isinstance(query, str) or len(query) > 500:
             raise BookmarkError(400, 'Search is limited to 500 characters.')
         tags = normalize_tags(tags or [])
@@ -405,7 +407,7 @@ class BookmarkStore:
         order = {'newest': 'b.created_at DESC,b.id', 'oldest': 'b.created_at,b.id', 'title': 'b.title COLLATE NOCASE,b.id'}
         if sort not in order:
             raise BookmarkError(400, 'Invalid bookmark sort order.')
-        where, args = ['b.deleted_at IS '+('NOT NULL' if deleted else 'NULL')], []
+        where, args = ['b.deleted_at IS NULL'], []
         for tag in tags:
             where.append('EXISTS(SELECT 1 FROM bookmark_tags t WHERE t.bookmark_id=b.id AND t.tag=?)')
             args.append(tag)

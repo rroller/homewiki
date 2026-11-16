@@ -370,13 +370,28 @@ class HTTPTests(unittest.TestCase):
         status,raw,_=self.request('/api/bookmarks/delete',{'id':item['id'],'revision':item['revision']},headers)
         self.assertEqual(status,200);deleted=json.loads(raw)
         self.assertEqual(json.loads(self.request('/api/bookmarks')[1])['total'],0)
-        self.assertEqual(json.loads(self.request('/api/bookmarks?deleted=1')[1])['total'],1)
-        self.assertEqual(self.request('/api/bookmarks/restore',{'id':item['id'],'revision':deleted['revision']},headers)[0],200)
+        self.assertEqual(self.request('/api/bookmarks/item?id='+item['id'])[0],404)
+        self.assertEqual(self.request('/api/bookmarks/restore',{'id':item['id'],'revision':item['revision']},headers)[0],404)
         for route in ['/bookmarks','/bookmarks/tags','/bookmarks/domains','/bookmarks.js']:
             self.assertEqual(self.request(route)[0],200)
         self.assertEqual(self.request('/api/bookmarks?limit=1000')[0],400)
         self.assertEqual(self.request('/api/bookmarks/item?id=../secret')[0],400)
         self.assertEqual(self.request('/bookmarks.sqlite3')[0],404)
+
+    def test_bookmark_title_lookup_is_protected_and_does_not_save_a_bookmark(self):
+        from unittest.mock import patch
+        import bookmarks
+        headers={'Content-Type':'application/json','X-Homewiki':'1'}
+        before=self.server.store.bookmarks.listing()['total']
+        with patch.object(bookmarks,'fetch_page_text',return_value={'title':'Example title','text':'Not saved'}) as fetch:
+            self.assertEqual(self.request('/api/bookmarks/title',{'url':'example.com'})[0],403)
+            self.assertEqual(self.request('/api/bookmarks/title',{'url':'example.com'},{**headers,'Origin':'https://attacker.example'})[0],403)
+            fetch.assert_not_called()
+            status,raw,_=self.request('/api/bookmarks/title',{'url':'example.com'},headers)
+        self.assertEqual(status,200)
+        self.assertEqual(json.loads(raw),{'url':'https://example.com/','title':'Example title'})
+        self.assertEqual(self.server.store.bookmarks.listing()['total'],before)
+        self.assertEqual(self.request('/api/bookmarks/title',{'url':'javascript:alert(1)'},headers)[0],400)
 
     def test_bad_payload(self):
         self.assertEqual(self.request('/api/save',[],{'Content-Type':'application/json','X-Homewiki':'1'})[0],400)

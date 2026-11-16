@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 import shutil
 import sqlite3
-from bookmarks import BookmarkStore, BookmarkError
+from bookmarks import BookmarkStore, BookmarkError, normalize_url
 import tempfile
 import threading
 import uuid
@@ -407,7 +407,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.command == 'GET':
                 if url.path == '/api/bookmarks':
                     data = store.bookmarks.listing(query=args.get('q', [''])[0], tags=args.get('tag', []),
-                        domain=args.get('domain', [''])[0], deleted=args.get('deleted', ['0'])[0] == '1',
+                        domain=args.get('domain', [''])[0],
                         limit=int(args.get('limit', ['40'])[0]), offset=int(args.get('offset', ['0'])[0]),
                         sort=args.get('sort', ['newest'])[0])
                 elif url.path == '/api/bookmarks/item':
@@ -469,8 +469,11 @@ class Handler(BaseHTTPRequestHandler):
                 name, revision = body.get('path'), body.get('revision')
                 if url.path == '/api/bookmarks/save':
                     data = store.bookmarks.save(body)
-                elif url.path in ('/api/bookmarks/delete', '/api/bookmarks/restore'):
-                    data = store.bookmarks.remove(body.get('id'), revision, restore=url.path.endswith('/restore'))
+                elif url.path == '/api/bookmarks/title':
+                    target, _ = normalize_url(body.get('url'))
+                    data = {'url': target, 'title': store.bookmarks.resolve_title(target)}
+                elif url.path == '/api/bookmarks/delete':
+                    data = store.bookmarks.remove(body.get('id'), revision)
                 elif url.path == '/api/bookmarks/extract':
                     data = store.bookmarks.refresh_text(body.get('id'), revision)
                 elif url.path == '/api/save':

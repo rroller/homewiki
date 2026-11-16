@@ -114,19 +114,30 @@ class BookmarkTests(unittest.TestCase):
         self.assertEqual(self.store.get(first['id']), first)
         self.assertEqual(self.store.listing()['total'], 1)
 
-    def test_soft_delete_restore_and_counts(self):
+    def test_permanent_delete_removes_content_tags_and_search_index(self):
         saved = self.save()
-        deleted = self.store.remove(saved['id'], saved['revision'])
+        self.assertEqual(self.store.remove(saved['id'], saved['revision']), {'id': saved['id']})
         self.assertEqual(self.store.listing()['total'], 0)
-        self.assertEqual(self.store.listing('guide', deleted=True)['total'], 1)
         self.assertEqual(self.store.groups('tags'), [])
-        with self.assertRaises(app.BookmarkError):
-            self.save()
-        restored = self.store.remove(deleted['id'], deleted['revision'], restore=True)
-        self.assertEqual(restored['created_at'], saved['created_at'])
-        self.assertIsNone(restored['deleted_at'])
-        self.assertEqual(self.store.listing(tags=['python'])['total'], 1)
-        self.assertEqual(self.store.listing(deleted=True)['total'], 0)
+        self.assertEqual(self.store.groups('domains'), [])
+        with self.assertRaises(app.BookmarkError) as caught:
+            self.store.get(saved['id'])
+        self.assertEqual(caught.exception.status, 404)
+        with self.store.connection() as connection:
+            for table in ['bookmarks', 'bookmark_tags', 'bookmark_search']:
+                self.assertEqual(connection.execute('SELECT count(*) FROM '+table).fetchone()[0], 0)
+        replacement = self.save()
+        self.assertNotEqual(replacement['id'], saved['id'])
+
+    def test_previously_deleted_bookmarks_are_removed_on_open(self):
+        saved = self.save()
+        with self.store.connection() as connection:
+            connection.execute("UPDATE bookmarks SET deleted_at='2026-01-01' WHERE id=?", (saved['id'],))
+        reopened = app.BookmarkStore(self.temp.name)
+        self.assertEqual(reopened.listing()['total'], 0)
+        with reopened.connection() as connection:
+            for table in ['bookmarks', 'bookmark_tags', 'bookmark_search']:
+                self.assertEqual(connection.execute('SELECT count(*) FROM '+table).fetchone()[0], 0)
 
     def test_simultaneous_writers_are_checked(self):
         first = self.save()

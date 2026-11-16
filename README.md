@@ -155,15 +155,15 @@ Indent child items with spaces or tabs. Two- and four-space bullet lists work, a
 
 ## Bookmarks
 
-Open **Bookmarks** in the sidebar, then **Add bookmark**. Save a web address, an optional title, an editable short description, and comma-separated tags. For a new bookmark, leave the title blank to read it automatically from the public page; if unavailable, the domain is used. A title you type is kept. Automatic title lookup does not save page text unless you choose that option. Tags are case-insensitive and may contain spaces. The original bookmark time stays the same when you edit its details.
+Open **Bookmarks** in the sidebar, then **Add bookmark**. Save a web address, an optional title, an editable short description, and comma-separated tags. After you type or paste a public URL, its title is filled into the form for you to review and edit. Changing the URL replaces an automatically filled title, while a title you have edited is kept. If unavailable, you can enter a title yourself or leave it blank to use the domain. Tags are case-insensitive and may contain spaces. The original bookmark time stays the same when you edit its details.
 
 - **Recent** lists newly bookmarked links first. You can also sort by oldest first or title.
 - **Tags** shows all tags and their bookmark counts. Click one to browse its links; clicking another tag on a bookmark narrows the list to links carrying both tags.
 - **Domains** groups links by hostname. Click a domain on a bookmark or on the domain index to see its links. The www prefix is ignored; other subdomains remain separate.
 - Search matches words across titles, URLs, descriptions, tags, and saved page text. Words use prefix matching and are combined; search can be combined with tag and domain filters. Filters are in the URL, so reload and browser history work.
-- **Delete** moves a link to **Bookmarks → Deleted**, where it can be restored. Duplicate URLs are rejected, including deleted bookmarks, so restore a previously saved link instead of adding it again.
+- **Delete** permanently removes a bookmark, its tags, and its saved page text after confirmation. Duplicate URLs are rejected while bookmarked; after deletion, a URL can be added again.
 
-**Save page text for search** is optional when creating or editing a link. **Save page text / Refresh text** on an existing bookmark retries extraction; **View text** shows what was saved. Extracted titles are used only when you leave the title empty. A failed fetch still saves your link and notes; a failed refresh keeps previously extracted text. Changing the URL clears text from the old address.
+**Save page text for search** is checked by default for new bookmarks; uncheck it if you only want the link and title. **Save page text / Refresh text** on an existing bookmark retries extraction; **View text** shows what was saved. Extracted titles are used only when you leave the title empty. A failed fetch still saves your link and notes; a failed refresh keeps previously extracted text. Changing the URL clears text from the old address.
 
 Extraction reads public HTML or plain-text pages without cookies, credentials, scripts, or browser rendering. Private/LAN links can be bookmarked normally, but their text is not fetched. Each extraction accepts up to 2 MiB of source and stores up to 300,000 characters; login-only, compressed-only, or JavaScript-dependent pages may not yield useful text.
 
