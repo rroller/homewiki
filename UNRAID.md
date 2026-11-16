@@ -64,10 +64,13 @@ data/
   uploads/     Dropped, pasted, and selected images
   .trash/      Recoverable deleted pages
   .history/    Saved page versions and metadata
+  bookmarks.sqlite3  Bookmark library and search index
   .sidebar-order.json  Shared sidebar ordering
   .initialized
   .lock
 ```
+
+Bookmarks use SQLite in the existing data mapping. No separate database container or additional mount is required. Include the whole data directory in stopped-container backups.
 
 Page history is available under **••• → Page history**. Saved versions live in .history within the same data mapping; no additional mount or configuration is needed.
 

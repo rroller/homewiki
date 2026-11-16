@@ -4,7 +4,7 @@ After looking for years, I couldn't find a simple wiki for home internal use tha
 
 **NOTE: this is meant for internal use only, do not expose this to the internet**
 
-Homewiki is a lightweight, locally hosted personal wiki. Pages are ordinary UTF-8 Markdown files in nested folders, without a database, build step, or third-party runtime dependencies.
+Homewiki is a lightweight, locally hosted personal wiki. Wiki pages are ordinary UTF-8 Markdown files in nested folders. The bookmark library uses SQLite. There is no build step or third-party runtime dependency.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/homewiki-dark.png">
@@ -17,6 +17,7 @@ A sample wiki with nested pages, internal links, sortable tables, and task lists
 - Create, edit, rename/move, and delete pages in the browser.
 - Markdown editor with preview, internal wiki links, a page-link picker, full-text search, and image uploads by drop, paste, or file picker.
 - Browser draft recovery, revision-based conflict detection, and a manual merge view.
+- Bookmark library with tags, domain browsing, editable descriptions, and optional page-text search.
 - Page history with comparisons and restore, recoverable deleted pages, last-edit dates, and a Recently edited index.
 - Docker Compose and an optional Unraid deployment script with persistent storage.
 
@@ -48,7 +49,7 @@ See the [full Unraid guide](UNRAID.md) for template installation, custom hostnam
 
 ## Run locally
 
-Requires Python 3.10+ on Linux or macOS (`fcntl` provides the file lock).
+Requires Python 3.10+ with SQLite FTS5 support on Linux or macOS (`fcntl` provides the file lock).
 
 ```sh
 python3 server.py
@@ -152,6 +153,24 @@ Indent child items with spaces or tabs. Two- and four-space bullet lists work, a
   - [x] Finish the first chapter
 ```
 
+## Bookmarks
+
+Open **Bookmarks** in the sidebar, then **Add bookmark**. Save a web address, an optional title, an editable short description, and comma-separated tags. Tags are case-insensitive and may contain spaces. The original bookmark time stays the same when you edit its details.
+
+- **Recent** lists newly bookmarked links first. You can also sort by oldest first or title.
+- **Tags** shows all tags and their bookmark counts. Click one to browse its links; clicking another tag on a bookmark narrows the list to links carrying both tags.
+- **Domains** groups links by hostname. Click a domain on a bookmark or on the domain index to see its links. The www prefix is ignored; other subdomains remain separate.
+- Search matches words across titles, URLs, descriptions, tags, and saved page text. Words use prefix matching and are combined; search can be combined with tag and domain filters. Filters are in the URL, so reload and browser history work.
+- **Delete** moves a link to **Bookmarks → Deleted**, where it can be restored. Duplicate URLs are rejected, including deleted bookmarks, so restore a previously saved link instead of adding it again.
+
+**Save page text for search** is optional when creating or editing a link. **Save page text / Refresh text** on an existing bookmark retries extraction; **View text** shows what was saved. Extracted titles are used only when you leave the title empty. A failed fetch still saves your link and notes; a failed refresh keeps previously extracted text. Changing the URL clears text from the old address.
+
+Extraction reads public HTML or plain-text pages without cookies, credentials, scripts, or browser rendering. Private/LAN links can be bookmarked normally, but their text is not fetched. Each extraction accepts up to 2 MiB of source and stores up to 300,000 characters; login-only, compressed-only, or JavaScript-dependent pages may not yield useful text.
+
+Bookmark forms keep drafts in this browser. Reopen Add/Edit after a reload to recover one, or choose **Discard draft**. Conflicting edits keep your form and offer a comparison with the latest bookmark before you save a reviewed draft.
+
+Bookmark data, tags, and the full-text index live in bookmarks.sqlite3 under the existing data directory. Wiki Markdown storage is unchanged. Include the whole data directory in stopped-container backups; do not commit bookmark databases or extracted text to Git. Docker and Unraid need no extra mount or service.
+
 ## Page history
 
 Open **••• → Page history** to browse earlier saved versions. Choose a version to see a highlighted comparison against the current page, or switch to **Saved Markdown** to read its full source. Minus lines belong to the selected version; plus lines belong to the current page.
@@ -179,6 +198,7 @@ data/
   .history/<page-path-hash>/<version-id>/
     page.md
     metadata.json
+  bookmarks.sqlite3    Bookmark library, tags, and full-text index
   .sidebar-order.json   Shared manual sidebar ordering
   .initialized
   .lock
@@ -216,4 +236,4 @@ python -m playwright install --with-deps chromium
 python -m unittest discover -s tests -v
 ```
 
-The suite covers file storage and CRUD, destination protection, external and concurrent edits, path safety, private request guards, direct page routes, persistent sidebar drag/keyboard ordering and conflicts, editor/preview/link/search flows, draft recovery, conflict merging, page history and safe version restore, trash/restore, themes, mobile layout, safe Markdown rendering, edit dates, recent-page ordering, image drop/paste/picker flows, upload failures and interruption, navigation during upload, and image persistence. Tests do not edit your real wiki.
+The suite covers file storage and CRUD, destination protection, external and concurrent edits, path safety, private request guards, direct page routes, persistent sidebar drag/keyboard ordering and conflicts, editor/preview/link/search flows, draft recovery, conflict merging, page history and safe version restore, bookmark CRUD/tag/domain/text search and extraction guards, trash/restore, themes, mobile layout, safe Markdown rendering, edit dates, recent-page ordering, image drop/paste/picker flows, upload failures and interruption, navigation during upload, and image persistence. Tests do not edit your real wiki.

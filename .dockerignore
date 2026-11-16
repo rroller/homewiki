@@ -2,9 +2,11 @@
 **
 !Dockerfile
 !server.py
+!bookmarks.py
 !static/
 !static/index.html
 !static/app.js
+!static/bookmarks.js
 !static/style.css
 !static/favicon.png
 !static/favicon.ico

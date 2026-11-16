@@ -1,7 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const reservedPageRoots=new Set(['api','uploads','page','recently-edited','app.js','style.css','favicon.png','favicon.ico']);
+const reservedPageRoots=new Set(['api','uploads','page','recently-edited','bookmarks','bookmarks.js','app.js','style.css','favicon.png','favicon.ico']);
 const pageURL = p => (reservedPageRoots.has(p.split('/')[0])?'/page/':'/') + p.split('/').map(encodeURIComponent).join('/');
 const state = {pageOrder:{parents:{},revision:null}, loading:false, recent:false, pages:[], page:null, editing:false, base:null, dirty:false, preview:false, remote:false};
 let tabID;
@@ -341,6 +341,7 @@ function renderRecent(){
   content.append(list);renderTree();
 }
 function navigateRecent(){
+  leaveBookmarks();
   preserveDraft();const turn=++navigating;state.loading=false;state.recent=true;state.page=null;state.editing=false;state.dirty=false;notice('');renderRecent();
   if(innerWidth<721)sidebar(true);window.scrollTo(0,0);
   refreshPages().catch(error=>{if(turn===navigating)notice(error.message);});
@@ -365,6 +366,7 @@ function preserveDraft(){
   else{removeDraft(state.page.path);$('draft-status').textContent='All changes saved';}
 }
 async function navigate(path){
+  leaveBookmarks();
   const turn=++navigating;preserveDraft();state.loading=true;state.recent=false;$('recently-edited').removeAttribute('aria-current');
   try{const page=await api('page?path='+encodeURIComponent(path));if(turn!==navigating)return;state.loading=false;
     state.page=page;state.editing=false;state.dirty=false;state.remote=false;notice('');paintPage();
@@ -374,6 +376,7 @@ async function navigate(path){
   }catch(error){if(turn!==navigating)return;state.loading=false;state.page=null;state.editing=false;state.dirty=false;$('reader').hidden=false;$('editor').hidden=true;$('edit-page').hidden=true;$('page-title').textContent=path||'Page not found';renderBreadcrumb(path);$('content').textContent=error.message;$('word-count').textContent='';$('page-footer').hidden=true;$('more').hidden=true;notice(error.status===404?'This page does not exist yet.':'Unable to load this page.',error.status===404?'Create page':null,()=>createDialog(path));renderTree();}
 }
 function route(){
+  if(['/bookmarks','/bookmarks/tags','/bookmarks/domains'].includes(location.pathname)&&!location.hash.startsWith('#/page/')){navigateBookmarks();return;}
   if(location.pathname==='/recently-edited'&&!location.hash.startsWith('#/page/')){navigateRecent();return;}
   let path='Home';
   try{
@@ -393,7 +396,7 @@ document.addEventListener('click',event=>{
   const link=event.target.closest('a[href]');if(!link||link.hasAttribute('download')||(link.target&&link.target!=='_self'))return;
   const url=new URL(link.href,location.href);
   const root=decodeURIComponent(url.pathname.split('/')[1]||'');
-  const wikiPath=!reservedPageRoots.has(root)||url.pathname.startsWith('/page/')||url.pathname==='/recently-edited';
+  const wikiPath=!reservedPageRoots.has(root)||url.pathname.startsWith('/page/')||url.pathname==='/recently-edited'||url.pathname==='/bookmarks'||url.pathname.startsWith('/bookmarks/');
   const localAnchor=url.pathname===location.pathname&&url.hash&&!url.hash.startsWith('#/page/');
   if(url.origin===location.origin&&wikiPath&&!localAnchor){
     event.preventDefault();history.pushState(null,'',url.pathname+url.search+url.hash);route();

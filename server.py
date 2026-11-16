@@ -10,6 +10,8 @@ import os
 import re
 from pathlib import Path
 import shutil
+import sqlite3
+from bookmarks import BookmarkStore, BookmarkError
 import tempfile
 import threading
 import uuid
@@ -40,6 +42,7 @@ class Store:
                 raise ValueError('Storage directories cannot be symlinks')
             p.mkdir(mode=0o700, exist_ok=True)
         self.mutex = threading.RLock()
+        self.bookmarks = BookmarkStore(self.root)
 
     @contextlib.contextmanager
     def locked(self):
@@ -402,7 +405,16 @@ class Handler(BaseHTTPRequestHandler):
             args = parse_qs(url.query)
             store = self.server.store
             if self.command == 'GET':
-                if url.path == '/api/pages':
+                if url.path == '/api/bookmarks':
+                    data = store.bookmarks.listing(query=args.get('q', [''])[0], tags=args.get('tag', []),
+                        domain=args.get('domain', [''])[0], deleted=args.get('deleted', ['0'])[0] == '1',
+                        limit=int(args.get('limit', ['40'])[0]), offset=int(args.get('offset', ['0'])[0]),
+                        sort=args.get('sort', ['newest'])[0])
+                elif url.path == '/api/bookmarks/item':
+                    data = store.bookmarks.get(args.get('id', [''])[0])
+                elif url.path in ('/api/bookmarks/tags', '/api/bookmarks/domains'):
+                    data = store.bookmarks.groups(url.path.rsplit('/', 1)[1])
+                elif url.path == '/api/pages':
                     data = store.listing(args.get('q', [''])[0])
                 elif url.path == '/api/page':
                     data = store.read(args.get('path', [''])[0])
@@ -418,8 +430,8 @@ class Handler(BaseHTTPRequestHandler):
                     data = store.page_order()
                 elif url.path == '/api/trash':
                     data = store.deleted()
-                elif url.path in ('/', '/app.js', '/style.css', '/favicon.png', '/favicon.ico', '/recently-edited') or url.path.startswith('/page/'):
-                    file = STATIC / {'/': 'index.html', '/app.js': 'app.js', '/style.css': 'style.css', '/favicon.png': 'favicon.png', '/favicon.ico': 'favicon.ico'}.get(url.path, 'index.html')
+                elif url.path in ('/', '/app.js', '/bookmarks.js', '/style.css', '/favicon.png', '/favicon.ico', '/recently-edited', '/bookmarks', '/bookmarks/tags', '/bookmarks/domains') or url.path.startswith('/page/'):
+                    file = STATIC / {'/': 'index.html', '/app.js': 'app.js', '/bookmarks.js': 'bookmarks.js', '/style.css': 'style.css', '/favicon.png': 'favicon.png', '/favicon.ico': 'favicon.ico'}.get(url.path, 'index.html')
                     kind = {'html': 'text/html', 'js': 'text/javascript', 'css': 'text/css', 'png': 'image/png', 'ico': 'image/x-icon'}[file.suffix[1:]]
                     self.reply(200, file.read_bytes(), kind + ('; charset=utf-8' if kind.startswith('text/') else ''))
                     return
@@ -455,7 +467,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not isinstance(body, dict):
                     raise Problem(400, 'Expected a JSON object')
                 name, revision = body.get('path'), body.get('revision')
-                if url.path == '/api/save':
+                if url.path == '/api/bookmarks/save':
+                    data = store.bookmarks.save(body)
+                elif url.path in ('/api/bookmarks/delete', '/api/bookmarks/restore'):
+                    data = store.bookmarks.remove(body.get('id'), revision, restore=url.path.endswith('/restore'))
+                elif url.path == '/api/bookmarks/extract':
+                    data = store.bookmarks.refresh_text(body.get('id'), revision)
+                elif url.path == '/api/save':
                     data = store.save(name, body.get('content'), revision)
                 elif url.path == '/api/history-restore':
                     data = store.restore_version(name, body.get('version'), revision)
@@ -470,12 +488,14 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     raise Problem(404, 'Not found')
             self.reply(200, data)
-        except Problem as e:
+        except (Problem, BookmarkError) as e:
             self.reply(e.status, {'error': e.message})
         except (ValueError, TypeError, UnicodeError):
             self.reply(400, {'error': 'Invalid request or non-UTF-8 Markdown file'})
         except FileNotFoundError:
             self.reply(404, {'error': 'Page not found'})
+        except sqlite3.Error:
+            self.reply(500, {'error': 'Bookmark database operation failed. Check storage permissions, free space, and SQLite FTS5 support.'})
         except OSError:
             self.reply(500, {'error': 'File operation failed. Check storage permissions and available disk space.'})
 

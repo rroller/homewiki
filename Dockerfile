@@ -1,6 +1,6 @@
 FROM python:3.14-slim
 WORKDIR /app
-COPY server.py ./
+COPY server.py bookmarks.py ./
 COPY static ./static
 RUN useradd --uid 10001 --create-home wiki && mkdir /data && chown wiki:wiki /data
 USER wiki
