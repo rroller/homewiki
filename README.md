@@ -6,6 +6,13 @@ After looking for years, I couldn't find a simple wiki for home internal use tha
 
 Homewiki is a lightweight, locally hosted personal wiki. Pages are ordinary UTF-8 Markdown files in nested folders, without a database, build step, or third-party runtime dependencies.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/homewiki-dark.png">
+  <img src="docs/images/homewiki-light.png" alt="Homewiki example with a nested page sidebar, linked collections, a sortable table, and a task list" width="1440">
+</picture>
+
+A sample wiki with nested pages, internal links, sortable tables, and task lists. The screenshot follows your light or dark theme.
+
 - Collapsible sidebar, light/dark themes, and clean page URLs with clickable breadcrumbs.
 - Create, edit, rename/move, and delete pages in the browser.
 - Markdown editor with preview, internal wiki links, a page-link picker, full-text search, and image uploads by drop, paste, or file picker.
