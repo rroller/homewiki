@@ -376,7 +376,11 @@ async function navigate(path){
   }catch(error){if(turn!==navigating)return;state.loading=false;state.page=null;state.editing=false;state.dirty=false;$('reader').hidden=false;$('editor').hidden=true;$('edit-page').hidden=true;$('page-title').textContent=path||'Page not found';renderBreadcrumb(path);$('content').textContent=error.message;$('word-count').textContent='';$('page-footer').hidden=true;$('more').hidden=true;notice(error.status===404?'This page does not exist yet.':'Unable to load this page.',error.status===404?'Create page':null,()=>createDialog(path));renderTree();}
 }
 function route(){
-  if(['/bookmarks','/bookmarks/tags','/bookmarks/domains'].includes(location.pathname)&&!location.hash.startsWith('#/page/')){navigateBookmarks();return;}
+  const bookmarkPath=location.pathname.replace(/\/+$/,'');
+  if(['/bookmarks','/bookmarks/tags','/bookmarks/domains','/bookmarks/add','/bookmarks/tools'].includes(bookmarkPath)&&!location.hash.startsWith('#/page/')){
+    if(bookmarkPath!==location.pathname)history.replaceState(null,'',bookmarkPath+location.search+location.hash);
+    navigateBookmarks();return;
+  }
   if(location.pathname==='/recently-edited'&&!location.hash.startsWith('#/page/')){navigateRecent();return;}
   let path='Home';
   try{

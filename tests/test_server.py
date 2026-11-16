@@ -430,6 +430,16 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(self.server.store.bookmarks.listing()['total'],before)
         self.assertEqual(self.request('/api/bookmarks/title',{'url':'javascript:alert(1)'},headers)[0],400)
 
+    def test_bookmark_capture_routes_are_read_only_shells(self):
+        before=self.server.store.bookmarks.listing()['total']
+        for route in ['/bookmarks/add','/bookmarks/tools','/bookmarks/add/','/bookmarks/tools/','/bookmarks/add?url=https%3A%2F%2Fexample.com&save=1']:
+            status,body,headers=self.request(route)
+            self.assertEqual(status,200)
+            self.assertIn(b'<!doctype html>',body)
+            self.assertIn("script-src 'self'",headers['Content-Security-Policy'])
+            self.assertNotIn('unsafe-inline',headers['Content-Security-Policy'])
+        self.assertEqual(self.server.store.bookmarks.listing()['total'],before)
+
     def test_bad_payload(self):
         self.assertEqual(self.request('/api/save',[],{'Content-Type':'application/json','X-Homewiki':'1'})[0],400)
 
