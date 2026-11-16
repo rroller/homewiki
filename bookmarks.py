@@ -149,7 +149,7 @@ def public_addresses(host, port):
     return list(dict.fromkeys(result))
 
 
-def fetch_page_text(value):
+def fetch_page_text(value, *, allow_title_only=False):
     """No proxies, credentials, cookies, subresources, scripts or unvalidated redirects."""
     if not FETCH_SLOTS.acquire(blocking=False):
         raise BookmarkError(429, 'Text extraction is busy. Try again shortly.')
@@ -211,7 +211,7 @@ def fetch_page_text(value):
                     parser = PageText()
                     parser.feed(source)
                     result = parser.result()
-                if not result['text']:
+                if not result['text'] and not (allow_title_only and result['title']):
                     raise BookmarkError(400, 'No readable page text was found.')
                 return result
             finally:
@@ -314,11 +314,19 @@ class BookmarkStore:
 
     def extract(self, url):
         try:
-            result = fetch_page_text(url)
+            result = fetch_page_text(url, allow_title_only=True)
+            if not result['text']:
+                return {'title': result['title'], 'extraction_status': 'failed', 'extraction_error': 'No readable page text was found.'}
             return {'page_text': result['text'], 'extraction_status': 'saved', 'extraction_error': '',
                     'extracted_at': datetime.now(timezone.utc).isoformat(), 'title': result['title']}
         except BookmarkError as error:
             return {'extraction_status': 'failed', 'extraction_error': error.message}
+
+    def resolve_title(self, url):
+        try:
+            return fetch_page_text(url, allow_title_only=True)['title']
+        except BookmarkError:
+            return ''
 
     def save(self, body):
         url, domain = normalize_url(body.get('url'))
@@ -330,6 +338,7 @@ class BookmarkStore:
         if type(body.get('extract', False)) is not bool:
             raise BookmarkError(400, 'Invalid text extraction setting.')
         extracted = self.extract(url) if body.get('extract', False) else {}
+        resolved_title = self.resolve_title(url) if token is None and not title.strip() and not body.get('extract', False) else ''
         now = datetime.now(timezone.utc).isoformat()
         try:
             with self.connection() as connection:
@@ -341,7 +350,7 @@ class BookmarkStore:
                         raise BookmarkError(409, 'Restore this bookmark before editing it.')
                 elif body.get('revision') is not None:
                     raise BookmarkError(409, 'This bookmark no longer exists. Your draft is kept.')
-                saved_title = title.strip() or (previous['title'] if previous and previous['url'] == url else '') or extracted.get('title') or domain
+                saved_title = title.strip() or (previous['title'] if previous and previous['url'] == url else '') or extracted.get('title') or resolved_title or domain
                 values = {'url': url, 'title': saved_title, 'description': description.strip(), 'domain': domain,
                           'tags': json.dumps(tags, ensure_ascii=False), 'updated_at': now, 'revision': uuid.uuid4().hex}
                 if previous is None or previous['url'] != url:

@@ -62,6 +62,34 @@ class BookmarkTests(unittest.TestCase):
         self.assertIsNone(updated['extracted_at'])
         self.assertEqual(self.store.listing('telescope')['total'], 0)
 
+    def test_blank_title_is_resolved_without_saving_page_text(self):
+        with patch.object(app, 'fetch_page_text', return_value={'title': 'A readable page title', 'text': 'Body text'}) as fetch:
+            saved = self.save(title='', extract=False)
+        fetch.assert_called_once_with(saved['url'], allow_title_only=True)
+        self.assertEqual(saved['title'], 'A readable page title')
+        self.assertEqual(saved['page_text'], '')
+        self.assertEqual(saved['extraction_status'], 'not_requested')
+        self.assertIsNone(saved['extracted_at'])
+        self.assertEqual(self.store.listing('readable')['total'], 1)
+        with patch.object(app, 'fetch_page_text') as fetch:
+            manual = self.save(url='https://example.net/manual', title='My own title')
+        fetch.assert_not_called()
+        self.assertEqual(manual['title'], 'My own title')
+
+    def test_title_lookup_failure_does_not_prevent_bookmarking(self):
+        with patch.object(app, 'fetch_page_text', side_effect=app.BookmarkError(400, 'Site unavailable')):
+            saved = self.save(title='')
+        self.assertEqual(saved['title'], 'example.com')
+        self.assertEqual(saved['description'], 'Notes for next weekend')
+        self.assertEqual(saved['extraction_status'], 'not_requested')
+
+    def test_title_only_page_keeps_title_when_text_extraction_fails(self):
+        with patch.object(app, 'fetch_page_text', return_value={'title': 'JavaScript app title', 'text': ''}):
+            saved = self.save(title='', extract=True)
+        self.assertEqual(saved['title'], 'JavaScript app title')
+        self.assertEqual(saved['extraction_status'], 'failed')
+        self.assertEqual(saved['page_text'], '')
+
     def test_extraction_failure_keeps_link_and_previous_saved_text(self):
         with patch.object(app, 'fetch_page_text', side_effect=app.BookmarkError(400, 'Site unavailable')):
             failed = self.save(extract=True)
@@ -116,7 +144,7 @@ class BookmarkTests(unittest.TestCase):
 
     def test_refresh_checks_revision_after_network_fetch(self):
         first = self.save()
-        def fetch(url):
+        def fetch(url, **options):
             self.save(id=first['id'], revision=first['revision'], description='Another browser')
             return {'title': 'Fetched', 'text': 'This must not overwrite newer data'}
         with patch.object(app, 'fetch_page_text', side_effect=fetch):
@@ -210,6 +238,19 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(tls.wrap_socket.call_args.kwargs['server_hostname'], 'example.com')
         self.assertEqual(connection.request.call_args.kwargs['headers']['Host'], 'example.com')
         connection.close.assert_called_once()
+
+    def test_title_only_html_can_supply_a_title_without_readable_body(self):
+        for allow in [True, False]:
+            connection = Mock()
+            connection.getresponse.return_value = self.response(body=b'<head><title>A &amp; B</title></head><body><script>run()</script></body>')
+            with patch.object(app, 'public_addresses', return_value=['8.8.8.8']), \
+                 patch.object(app.socket, 'create_connection', return_value=Mock()), \
+                 patch.object(app.http.client, 'HTTPConnection', return_value=connection):
+                if allow:
+                    self.assertEqual(app.fetch_page_text('http://example.com/', allow_title_only=True), {'title': 'A & B', 'text': ''})
+                else:
+                    with self.assertRaises(app.BookmarkError):
+                        app.fetch_page_text('http://example.com/')
 
     def test_redirect_is_checked_before_connecting_to_private_target(self):
         connection = Mock()

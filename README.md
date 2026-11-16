@@ -155,7 +155,7 @@ Indent child items with spaces or tabs. Two- and four-space bullet lists work, a
 
 ## Bookmarks
 
-Open **Bookmarks** in the sidebar, then **Add bookmark**. Save a web address, an optional title, an editable short description, and comma-separated tags. Tags are case-insensitive and may contain spaces. The original bookmark time stays the same when you edit its details.
+Open **Bookmarks** in the sidebar, then **Add bookmark**. Save a web address, an optional title, an editable short description, and comma-separated tags. For a new bookmark, leave the title blank to read it automatically from the public page; if unavailable, the domain is used. A title you type is kept. Automatic title lookup does not save page text unless you choose that option. Tags are case-insensitive and may contain spaces. The original bookmark time stays the same when you edit its details.
 
 - **Recent** lists newly bookmarked links first. You can also sort by oldest first or title.
 - **Tags** shows all tags and their bookmark counts. Click one to browse its links; clicking another tag on a bookmark narrows the list to links carrying both tags.

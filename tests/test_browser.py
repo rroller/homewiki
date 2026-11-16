@@ -301,6 +301,23 @@ class BrowserTests(unittest.TestCase):
         expect(p.locator('#modal')).not_to_be_visible()
         expect(p.locator('.bookmark-description')).to_have_text('My local edit and other browser edit')
 
+    def test_bookmark_automatically_reads_title_without_text_checkbox(self):
+        from unittest.mock import patch
+        import bookmarks
+        p=self.page
+        p.locator('#bookmarks-open').click();p.locator('#add-bookmark').click()
+        p.get_by_label('Web address',exact=True).fill('https://example.com/automatic-title')
+        expect(p.get_by_label('Save page text for search',exact=True)).not_to_be_checked()
+        with patch.object(bookmarks,'fetch_page_text',return_value={'title':'Automatically discovered title','text':'Do not save this body'}):
+            p.get_by_role('button',name='Save bookmark',exact=True).click()
+            expect(p.locator('#modal')).not_to_be_visible()
+        expect(p.locator('.bookmark-title')).to_have_text('Automatically discovered title')
+        saved=self.store.bookmarks.listing()['items'][0]
+        self.assertEqual(saved['extraction_status'],'not_requested')
+        self.assertEqual(self.store.bookmarks.get(saved['id'])['page_text'],'')
+        p.locator('.bookmark-card').get_by_role('button',name='Edit',exact=True).click()
+        expect(p.get_by_label('Title (optional)',exact=True)).to_have_value('Automatically discovered title')
+
     def test_bookmark_page_text_search_and_safe_rendering(self):
         from unittest.mock import patch
         import bookmarks
