@@ -123,7 +123,7 @@ Docker deployments can set `HOMEWIKI_ALLOWED_HOSTS` to the permitted IP/hostname
 
 ## Use the wiki
 
-The sidebar toolbar contains New page (pencil), Recently edited (clock), Search (magnifying glass), and the sidebar toggle. Only top-level page groups have collapse arrows; their nested pages stay expanded when the group is open. Drag a page or group above/below a sibling to set its order, or focus it and press Alt+↑/↓. Ordering is saved on the server for all browsers and never changes page paths. New pages appear after ordered siblings; deleted entries are ignored.
+The sidebar toolbar contains New page (pencil), Recently edited (clock), Search (magnifying glass), Bookmark tools (wrench), and the sidebar toggle. The tools icon opens the Safari bookmarklet setup and capture address. Only top-level page groups have collapse arrows; their nested pages stay expanded when the group is open. Drag a page or group above/below a sibling to set its order, or focus it and press Alt+↑/↓. Ordering is saved on the server for all browsers and never changes page paths. New pages appear after ordered siblings; deleted entries are ignored.
 
 Use the upper-right **••• → New subpage** menu to create a child of the current page. Enter its name; Homewiki adds the parent path automatically. Unsaved work on the parent stays in its browser draft.
 
