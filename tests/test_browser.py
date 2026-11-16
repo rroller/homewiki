@@ -1079,6 +1079,34 @@ After the table.
         p.reload();expect(p.locator('.recent-page strong').first).to_have_text('Old')
         expect(p.locator('.recent-page')).to_have_count(6)
 
+    def test_mobile_sidebar_backdrop_dismisses_without_clicking_the_page(self):
+        context=self.browser.new_context(viewport={'width':390,'height':844},is_mobile=True,has_touch=True)
+        try:
+            p=context.new_page();p.on('pageerror',lambda error:self.errors.append(str(error)))
+            for width in [390,720]:
+                p.set_viewport_size({'width':width,'height':844});p.goto(self.url)
+                expect(p.locator('#sidebar-shade')).not_to_be_visible()
+                p.locator('#expand').tap()
+                expect(p.locator('#sidebar-shade')).to_be_visible()
+                p.locator('.section-label').tap()
+                expect(p.locator('#sidebar')).to_be_visible()
+                # A tap above the underlying page-actions button only dismisses the menu.
+                box=p.locator('#more').bounding_box()
+                p.touchscreen.tap(box['x']+box['width']/2,box['y']+box['height']/2)
+                expect(p.locator('#sidebar')).not_to_be_visible()
+                expect(p.locator('#sidebar-shade')).not_to_be_visible()
+                expect(p.locator('#actions')).not_to_be_visible()
+                expect(p.locator('#expand')).to_be_focused()
+                p.locator('#expand').tap()
+                p.touchscreen.tap(width-10,830)
+                expect(p.locator('#sidebar')).not_to_be_visible()
+                p.reload();expect(p.locator('#sidebar-shade')).not_to_be_visible()
+            p.set_viewport_size({'width':1440,'height':1000});p.locator('#expand').click()
+            expect(p.locator('#sidebar-shade')).not_to_be_visible()
+            p.locator('#more').click();expect(p.locator('#actions')).to_be_visible()
+        finally:
+            context.close()
+
     def test_appearance_markdown_and_mobile(self):
         p=self.page
         # Escaping and links: raw HTML and script URLs must never become active HTML.
