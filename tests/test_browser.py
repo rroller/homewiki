@@ -1,5 +1,6 @@
 """Optional browser integration tests. Install playwright and its Chromium to run."""
 import importlib.util
+import sys
 import os
 import re
 from pathlib import Path
@@ -12,6 +13,7 @@ try:
 except ImportError:
     sync_playwright=None
 
+sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 spec=importlib.util.spec_from_file_location('homewiki_browser',Path(__file__).resolve().parents[1]/'server.py')
 app=importlib.util.module_from_spec(spec);spec.loader.exec_module(app)
 
@@ -28,7 +30,9 @@ class BrowserTests(unittest.TestCase):
         self.store=self.server.store=app.Store(self.temp.name);self.store.seed()
         self.thread=threading.Thread(target=self.server.serve_forever,daemon=True);self.thread.start()
         self.context=self.browser.new_context(viewport={'width':1440,'height':1000},color_scheme='light')
-        self.page=self.context.new_page();self.errors=[];self.page.on('pageerror',lambda error:self.errors.append(str(error)))
+        self.page=self.context.new_page()
+        self.page.route('**/api/bookmarks/title',lambda route:route.fulfill(json={'title':'','url':route.request.post_data_json['url']}))
+        self.errors=[];self.page.on('pageerror',lambda error:self.errors.append(str(error)))
         self.url='http://127.0.0.1:'+str(self.server.server_port);self.page.goto(self.url)
         expect(self.page.locator('#content')).to_contain_text('Welcome to Homewiki')
     def tearDown(self):
@@ -217,6 +221,211 @@ class BrowserTests(unittest.TestCase):
         p.get_by_role('button',name='Cancel',exact=True).click()
         expect(p.locator('#history-version option')).to_have_count(2)
         expect(p.locator('#history-content')).to_have_text(saved['content'])
+
+    def add_bookmark(self, url, title, description='', tags=''):
+        p=self.page
+        p.locator('#add-bookmark').click()
+        p.get_by_label('Save page text for search',exact=True).uncheck()
+        p.get_by_label('Web address',exact=True).fill(url)
+        p.get_by_label('Title (optional)',exact=True).fill(title)
+        p.get_by_label('Short description',exact=True).fill(description)
+        p.get_by_label('Tags',exact=True).fill(tags)
+        p.get_by_role('button',name='Save bookmark',exact=True).click()
+        expect(p.locator('#modal')).not_to_be_visible()
+        expect(p.locator('.bookmark-title').filter(has_text=title)).to_be_visible()
+
+    def test_bookmark_library_crud_tags_domains_search_and_recovery(self):
+        p=self.page
+        p.locator('#bookmarks-open').click()
+        expect(p.locator('#page-title')).to_have_text('Bookmarks')
+        expect(p.locator('#bookmarks-view')).to_contain_text('Save your first link')
+        self.add_bookmark('https://example.com/python','Python handbook','A practical reference','Python, reference')
+        created=self.store.bookmarks.listing()['items'][0]['created_at']
+        self.add_bookmark('https://www.example.com/garden','Garden notes','Plans for spring','garden, reference')
+        self.add_bookmark('https://example.net/book','Weekend reading','A quiet afternoon','reading')
+        expect(p.locator('.bookmark-title').first).to_have_text('Weekend reading')
+        p.locator('.bookmark-nav').get_by_role('link',name='Tags',exact=True).click()
+        expect(p.locator('#page-title')).to_have_text('Bookmark tags')
+        p.locator('.bookmark-group').filter(has_text='python').click()
+        expect(p.locator('.bookmark-card')).to_have_count(1)
+        expect(p.locator('.bookmark-title')).to_have_text('Python handbook')
+        p.reload();expect(p.locator('.bookmark-title')).to_have_text('Python handbook')
+        p.locator('.bookmark-domain').click()
+        expect(p.locator('.bookmark-card')).to_have_count(2)
+        p.locator('.bookmark-nav').get_by_role('link',name='Domains',exact=True).click()
+        expect(p.locator('.bookmark-group')).to_have_count(2)
+        p.locator('.bookmark-group').filter(has_text='example.com').click()
+        expect(p.locator('.bookmark-card')).to_have_count(2)
+        p.get_by_role('searchbox',name='Search bookmarks',exact=True).fill('practical')
+        expect(p.locator('.bookmark-card')).to_have_count(1)
+        card=p.locator('.bookmark-card')
+        card.get_by_role('button',name='Edit',exact=True).click()
+        p.get_by_label('Short description',exact=True).fill('Updated reference notes')
+        p.get_by_role('button',name='Save bookmark',exact=True).click()
+        expect(p.locator('#modal')).not_to_be_visible()
+        expect(p.locator('.bookmark-card')).to_have_count(0)
+        p.get_by_role('searchbox',name='Search bookmarks',exact=True).fill('updated')
+        expect(p.locator('.bookmark-description')).to_have_text('Updated reference notes')
+        self.assertEqual(self.store.bookmarks.listing('updated')['items'][0]['created_at'],created)
+        p.locator('.bookmark-card').get_by_role('button',name='Delete',exact=True).click()
+        p.get_by_role('button',name='Delete bookmark',exact=True).click()
+        expect(p.locator('#modal')).not_to_be_visible()
+        expect(p.locator('.bookmark-nav')).not_to_contain_text('Deleted')
+        p.locator('.bookmark-nav').get_by_role('link',name='Recent',exact=True).click()
+        expect(p.locator('.bookmark-card')).to_have_count(2)
+
+    def test_bookmark_drafts_and_conflicting_edits(self):
+        p=self.page
+        p.locator('#bookmarks-open').click();p.locator('#add-bookmark').click()
+        p.get_by_label('Save page text for search',exact=True).uncheck()
+        p.get_by_label('Web address',exact=True).fill('example.com/draft')
+        p.get_by_label('Title (optional)',exact=True).fill('My draft bookmark')
+        p.get_by_label('Short description',exact=True).fill('Not saved yet')
+        p.reload();p.locator('#add-bookmark').click()
+        expect(p.get_by_label('Short description',exact=True)).to_have_value('Not saved yet')
+        expect(p.locator('#bookmark-draft-status')).to_contain_text('Recovered')
+        p.get_by_role('button',name='Save bookmark',exact=True).click()
+        expect(p.locator('#modal')).not_to_be_visible()
+        item=self.store.bookmarks.listing()['items'][0]
+        p.locator('.bookmark-card').get_by_role('button',name='Edit',exact=True).click()
+        p.get_by_label('Short description',exact=True).fill('My local edit')
+        other=self.store.bookmarks.save({**item,'description':'Other browser edit'})
+        p.get_by_role('button',name='Save bookmark',exact=True).click()
+        expect(p.locator('#modal .error-text')).to_contain_text('changed in another tab')
+        expect(p.get_by_label('Short description',exact=True)).to_have_value('My local edit')
+        self.assertEqual(self.store.bookmarks.get(item['id'])['description'],'Other browser edit')
+        p.get_by_role('button',name='Compare latest bookmark',exact=True).click()
+        expect(p.locator('.bookmark-conflict')).to_contain_text('Other browser edit')
+        p.get_by_label('Short description',exact=True).fill('My local edit and other browser edit')
+        p.get_by_role('button',name='Use my reviewed draft',exact=True).click()
+        p.get_by_role('button',name='Save bookmark',exact=True).click()
+        expect(p.locator('#modal')).not_to_be_visible()
+        expect(p.locator('.bookmark-description')).to_have_text('My local edit and other browser edit')
+
+    def test_discard_bookmark_draft_does_not_submit_the_form(self):
+        p=self.page
+        p.locator('#bookmarks-open').click();p.locator('#add-bookmark').click()
+        p.get_by_label('Title (optional)',exact=True).fill('Discard me')
+        p.get_by_label('Web address',exact=True).fill('https://example.com/discard')
+        p.get_by_label('Save page text for search',exact=True).uncheck()
+        p.get_by_role('button',name='Discard draft',exact=True).click()
+        expect(p.locator('#modal')).not_to_be_visible()
+        p.wait_for_timeout(100)
+        self.assertEqual(self.store.bookmarks.listing()['total'],0)
+        p.locator('#add-bookmark').click()
+        expect(p.get_by_label('Web address',exact=True)).to_have_value('')
+
+    def test_bookmark_title_fills_form_and_can_be_edited_before_save(self):
+        p=self.page
+        p.unroute('**/api/bookmarks/title')
+        p.route('**/api/bookmarks/title',lambda route:route.fulfill(json={'title':'Fetched article title','url':route.request.post_data_json['url']}))
+        p.locator('#bookmarks-open').click();p.locator('#add-bookmark').click()
+        expect(p.get_by_label('Save page text for search',exact=True)).to_be_checked()
+        self.assertIsNone(p.get_by_label('Tags',exact=True).get_attribute('placeholder'))
+        p.get_by_label('Web address',exact=True).fill('https://example.com/autofill')
+        expect(p.get_by_label('Title (optional)',exact=True)).to_have_value('Fetched article title')
+        self.assertEqual(self.store.bookmarks.listing()['total'],0)
+        p.get_by_label('Title (optional)',exact=True).fill('My hand-edited title')
+        p.get_by_label('Save page text for search',exact=True).uncheck()
+        p.get_by_role('button',name='Save bookmark',exact=True).click()
+        expect(p.locator('#modal')).not_to_be_visible()
+        expect(p.locator('.bookmark-title')).to_have_text('My hand-edited title')
+
+    def test_late_bookmark_title_lookup_does_not_replace_manual_title(self):
+        p=self.page;pending=[]
+        p.unroute('**/api/bookmarks/title')
+        p.route('**/api/bookmarks/title',lambda route:pending.append(route))
+        p.locator('#bookmarks-open').click();p.locator('#add-bookmark').click()
+        with p.expect_request(lambda request:request.url.endswith('/api/bookmarks/title')):
+            p.get_by_label('Web address',exact=True).fill('https://example.com/slow')
+        p.get_by_label('Title (optional)',exact=True).fill('Already editing this myself')
+        with p.expect_response(lambda response:response.url.endswith('/api/bookmarks/title')):
+            pending[0].fulfill(json={'title':'Late automatic title'})
+        p.wait_for_timeout(100)
+        expect(p.get_by_label('Title (optional)',exact=True)).to_have_value('Already editing this myself')
+
+    def test_bookmark_title_uses_latest_url_and_keeps_manual_title_on_url_change(self):
+        p=self.page;pending=[]
+        p.unroute('**/api/bookmarks/title')
+        def handle(route):
+            if route.request.post_data_json['url'].endswith('/old'):
+                pending.append(route)
+            else:route.fulfill(json={'title':'New URL title'})
+        p.route('**/api/bookmarks/title',handle)
+        p.locator('#bookmarks-open').click();p.locator('#add-bookmark').click()
+        with p.expect_request(lambda request:request.url.endswith('/api/bookmarks/title')):
+            p.get_by_label('Web address',exact=True).fill('https://example.com/old')
+        p.get_by_label('Web address',exact=True).fill('https://example.com/new')
+        p.wait_for_timeout(450)
+        pending[0].fulfill(json={'title':'Stale old URL title'})
+        expect(p.get_by_label('Title (optional)',exact=True)).to_have_value('New URL title')
+        p.get_by_label('Title (optional)',exact=True).fill('My custom title')
+        p.get_by_label('Web address',exact=True).fill('https://example.com/third')
+        p.wait_for_timeout(450)
+        expect(p.get_by_label('Title (optional)',exact=True)).to_have_value('My custom title')
+
+    def test_bookmark_automatically_reads_title_without_text_checkbox(self):
+        from unittest.mock import patch
+        import bookmarks
+        p=self.page
+        p.locator('#bookmarks-open').click();p.locator('#add-bookmark').click()
+        p.get_by_label('Web address',exact=True).fill('https://example.com/automatic-title')
+        expect(p.get_by_label('Save page text for search',exact=True)).to_be_checked()
+        p.get_by_label('Save page text for search',exact=True).uncheck()
+        with patch.object(bookmarks,'fetch_page_text',return_value={'title':'Automatically discovered title','text':'Do not save this body'}):
+            p.get_by_role('button',name='Save bookmark',exact=True).click()
+            expect(p.locator('#modal')).not_to_be_visible()
+        expect(p.locator('.bookmark-title')).to_have_text('Automatically discovered title')
+        saved=self.store.bookmarks.listing()['items'][0]
+        self.assertEqual(saved['extraction_status'],'not_requested')
+        self.assertEqual(self.store.bookmarks.get(saved['id'])['page_text'],'')
+        p.locator('.bookmark-card').get_by_role('button',name='Edit',exact=True).click()
+        expect(p.get_by_label('Title (optional)',exact=True)).to_have_value('Automatically discovered title')
+
+    def test_bookmark_page_text_search_and_safe_rendering(self):
+        from unittest.mock import patch
+        import bookmarks
+        p=self.page
+        p.locator('#bookmarks-open').click();p.locator('#add-bookmark').click()
+        p.get_by_label('Web address',exact=True).fill('https://example.com/extracted')
+        p.get_by_label('Short description',exact=True).fill('<img src=x onerror=alert(1)>')
+        p.get_by_label('Save page text for search',exact=True).check()
+        with patch.object(bookmarks,'fetch_page_text',return_value={'title':'Article title','text':'A fascinating nebula and telescope guide <script>window.bookmarkInjected=true</script>'}):
+            p.get_by_role('button',name='Save bookmark',exact=True).click()
+            expect(p.locator('#modal')).not_to_be_visible()
+        expect(p.locator('.bookmark-title')).to_have_text('Article title')
+        p.get_by_role('searchbox',name='Search bookmarks',exact=True).fill('nebula')
+        expect(p.locator('.bookmark-card')).to_have_count(1)
+        expect(p.locator('.bookmark-excerpt')).to_contain_text('nebula')
+        p.get_by_role('button',name='View text',exact=True).click()
+        expect(p.locator('.bookmark-saved-text')).to_contain_text('<script>')
+        self.assertEqual(p.locator('#modal script').count(),0)
+        self.assertEqual(p.locator('.bookmark-card img').count(),0)
+        self.assertFalse(p.evaluate('Boolean(window.bookmarkInjected)'))
+        p.locator('#modal-close').click()
+        with patch.object(bookmarks,'fetch_page_text',side_effect=bookmarks.BookmarkError(400,'Could not fetch this page')):
+            p.get_by_role('button',name='Refresh text',exact=True).click()
+            expect(p.locator('.bookmark-text-status')).to_contain_text('Previously saved text')
+        expect(p.locator('.bookmark-card')).to_have_count(1)
+
+    def test_bookmarks_preserve_wiki_draft_and_reserved_page_routes(self):
+        p=self.page
+        p.locator('#edit-page').click();p.locator('#source').fill('# My unsaved wiki work')
+        p.locator('#bookmarks-open').click()
+        expect(p.locator('#page-title')).to_have_text('Bookmarks')
+        p.locator('#brand-home').click()
+        expect(p.locator('#source')).to_have_value('# My unsaved wiki work')
+        self.store.save('bookmarks','# A wiki page named bookmarks')
+        p.goto(self.url+'/page/bookmarks')
+        expect(p.locator('#page-title')).to_have_text('A wiki page named bookmarks')
+        p.locator('#bookmarks-open').click()
+        expect(p.locator('#page-title')).to_have_text('Bookmarks')
+        p.locator('.bookmark-nav').get_by_role('link',name='Tags',exact=True).click()
+        expect(p).to_have_url(self.url+'/bookmarks/tags')
+        p.reload();expect(p.locator('#page-title')).to_have_text('Bookmark tags')
+        p.go_back();expect(p.locator('#page-title')).to_have_text('Bookmarks')
+        p.set_viewport_size({'width':390,'height':844})
+        self.assertTrue(p.evaluate('document.documentElement.scrollWidth<=innerWidth'))
 
     def test_full_wiki_workflow(self):
         p=self.page

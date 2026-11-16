@@ -18,6 +18,10 @@ backup/
 .initialized
 .lock
 .sidebar-order.json
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
 image.txt
 before-*.json
 
