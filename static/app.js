@@ -1,14 +1,16 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const pageURL = p => '/page/' + p.split('/').map(encodeURIComponent).join('/');
-const state = {loading:false, recent:false, pages:[], page:null, editing:false, base:null, dirty:false, preview:false, remote:false};
+const reservedPageRoots=new Set(['api','uploads','page','recently-edited','app.js','style.css','favicon.png','favicon.ico']);
+const pageURL = p => (reservedPageRoots.has(p.split('/')[0])?'/page/':'/') + p.split('/').map(encodeURIComponent).join('/');
+const state = {pageOrder:{parents:{},revision:null}, loading:false, recent:false, pages:[], page:null, editing:false, base:null, dirty:false, preview:false, remote:false};
 let tabID;
 try { tabID=sessionStorage.getItem('homewiki:tab'); if(!tabID){tabID=crypto.randomUUID();sessionStorage.setItem('homewiki:tab',tabID);} } catch {tabID=String(Date.now())+Math.random();}
 const draftPrefix = p => 'homewiki:draft:v2:' + encodeURIComponent(p) + ':';
 const draftKey = p => draftPrefix(p) + tabID;
 let toastTimer, navigating = 0;
 const pendingUploads=new Map();
+let draggedPage=null,orderSaving=false,orderEpoch=0;
 function toast(message) { $('toast').textContent=message; $('toast').hidden=false; clearTimeout(toastTimer); toastTimer=setTimeout(()=>$('toast').hidden=true,4000); }
 function stored(key, fallback=null) { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } }
 function setStored(key, value) { try { localStorage.setItem(key,value); return true; } catch { return false; } }
@@ -89,7 +91,8 @@ function inline(text) {
     else if(/^[a-z][a-z\d+.-]*:/i.test(target)||target.startsWith('//')) return hold(esc(label));
     else if(target.startsWith('#')) href=target;
     else {
-      let decoded; try {decoded=decodeURIComponent(target);} catch {decoded=target;}
+      const pageTarget=target.startsWith('/page/')?target.slice(5):target;
+      let decoded; try {decoded=decodeURIComponent(pageTarget);} catch {decoded=pageTarget;}
       const root=decoded.startsWith('/');
       const parts=root?[]:(state.page?.path.split('/').slice(0,-1)||[]);
       for(const part of decoded.replace(/^\//,'').replace(/\.md$/i,'').split('/')) {
@@ -211,12 +214,18 @@ $('collapse').onclick=()=>sidebar(true);$('expand').onclick=()=>sidebar(false);
 $('theme-toggle').onclick=()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
 
 function renderTree(){
+  if(draggedPage)return;
   const root={children:new Map()};
   for(const page of state.pages){let node=root;const parts=page.path.split('/');parts.forEach((part,index)=>{if(!node.children.has(part))node.children.set(part,{name:part,path:parts.slice(0,index+1).join('/'),children:new Map()});node=node.children.get(part);});node.page=page;}
   $('tree').replaceChildren();$('page-count').textContent=state.pages.length;
   function render(parent,node,depth){
-    for(const child of node.children.values()){
+    const parentPath=node.path||'';
+    const saved=Object.hasOwn(state.pageOrder.parents,parentPath)?state.pageOrder.parents[parentPath]:[];
+    const ranks=new Map(saved.map((path,index)=>[path,index]));
+    const children=[...node.children.values()].sort((a,b)=>(ranks.get(a.path)??saved.length)-(ranks.get(b.path)??saved.length));
+    for(const child of children){
       const row=document.createElement('div');row.className='tree-row'+(child.path===state.page?.path?' active':'');row.style.paddingLeft=(depth*15+3)+'px';
+      row.dataset.path=child.path;row.dataset.parent=parentPath;row.draggable=true;row.title='Drag to reorder within this folder. Alt+↑/↓ also moves this item.';
       const toggle=document.createElement('button');toggle.className='tree-toggle';toggle.type='button';row.append(toggle);
       const collapsible=depth===0&&child.children.size>0;
       let collapsed=collapsible&&stored('homewiki:folder:'+child.path)==='closed';
@@ -228,7 +237,78 @@ function renderTree(){
   }
   render($('tree'),root,0);
 }
-async function refreshPages(){state.pages=await api('pages');renderTree();if(state.recent)renderRecent();}
+async function refreshPages(){
+  const epoch=orderEpoch;const [pages,order]=await Promise.all([api('pages'),api('order')]);
+  state.pages=pages;if(epoch===orderEpoch&&!orderSaving)state.pageOrder=order;
+  renderTree();if(state.recent)renderRecent();
+}
+function siblingRows(parent){return [...$('tree').querySelectorAll('.tree-row')].filter(row=>row.dataset.parent===parent);}
+function clearOrderDrag(){
+  draggedPage=null;
+  for(const row of $('tree').querySelectorAll('.dragging,.drop-before,.drop-after'))row.classList.remove('dragging','drop-before','drop-after');
+}
+function focusTreePage(path){
+  const row=[...$('tree').querySelectorAll('.tree-row')].find(row=>row.dataset.path===path);
+  row?.querySelector('a,button:not(:disabled)')?.focus();
+}
+async function savePageOrder(parent,children,revision,focusPath=null){
+  if(orderSaving)return;
+  orderSaving=true;orderEpoch++;const before=state.pageOrder;
+  state.pageOrder={parents:{...before.parents,[parent]:children},revision:before.revision};renderTree();
+  if(focusPath)focusTreePage(focusPath);
+  try{
+    state.pageOrder=await api('order',{parent,children,revision});toast('Page order saved');
+  }catch(error){
+    state.pageOrder=before;
+    try{state.pageOrder=await api('order');}catch{ /* Keep the last known order. */ }
+    toast(error.message);
+  }finally{
+    orderSaving=false;orderEpoch++;renderTree();
+    if(focusPath)focusTreePage(focusPath);
+  }
+}
+$('tree').addEventListener('dragstart',event=>{
+  const row=event.target.closest('.tree-row');
+  if(!row||orderSaving||event.target.closest('button')){event.preventDefault();return;}
+  draggedPage={path:row.dataset.path,parent:row.dataset.parent,revision:state.pageOrder.revision};
+  row.classList.add('dragging');event.dataTransfer.effectAllowed='move';
+  event.dataTransfer.setData('application/x-homewiki-page',draggedPage.path);
+  event.dataTransfer.setData('text/plain',draggedPage.path);
+});
+$('tree').addEventListener('dragover',event=>{
+  if(!draggedPage)return;
+  event.preventDefault();
+  const bounds=$('tree').getBoundingClientRect();
+  if(event.clientY>bounds.bottom-24)$('tree').scrollTop+=12;
+  else if(event.clientY<bounds.top+24)$('tree').scrollTop-=12;
+  const row=event.target.closest('.tree-row');
+  for(const target of $('tree').querySelectorAll('.drop-before,.drop-after'))target.classList.remove('drop-before','drop-after');
+  if(!row||row.dataset.parent!==draggedPage.parent||row.dataset.path===draggedPage.path){event.dataTransfer.dropEffect='none';return;}
+  event.preventDefault();event.dataTransfer.dropEffect='move';
+  const box=row.getBoundingClientRect();row.classList.add(event.clientY<box.top+box.height/2?'drop-before':'drop-after');
+});
+$('tree').addEventListener('drop',event=>{
+  if(!draggedPage)return;
+  event.preventDefault();const row=event.target.closest('.tree-row');const moved=draggedPage;
+  if(!row||row.dataset.parent!==moved.parent||row.dataset.path===moved.path){clearOrderDrag();renderTree();return;}
+  const paths=siblingRows(moved.parent).map(item=>item.dataset.path).filter(path=>path!==moved.path);
+  const box=row.getBoundingClientRect();const after=event.clientY>=box.top+box.height/2;
+  paths.splice(paths.indexOf(row.dataset.path)+(after?1:0),0,moved.path);
+  clearOrderDrag();savePageOrder(moved.parent,paths,moved.revision);
+});
+$('tree').addEventListener('dragend',()=>{if(draggedPage){clearOrderDrag();renderTree();}});
+document.addEventListener('dragover',event=>{if(draggedPage)event.preventDefault();});
+document.addEventListener('drop',event=>{if(draggedPage){event.preventDefault();clearOrderDrag();renderTree();}});
+$('tree').addEventListener('keydown',event=>{
+  if(!event.altKey||!['ArrowUp','ArrowDown'].includes(event.key))return;
+  const row=event.target.closest('.tree-row');if(!row)return;
+  event.preventDefault();if(orderSaving)return;
+  const paths=siblingRows(row.dataset.parent).map(item=>item.dataset.path);
+  const index=paths.indexOf(row.dataset.path),next=index+(event.key==='ArrowUp'?-1:1);
+  if(next<0||next>=paths.length)return;
+  [paths[index],paths[next]]=[paths[next],paths[index]];
+  savePageOrder(row.dataset.parent,paths,state.pageOrder.revision,row.dataset.path);
+});
 function renderBreadcrumb(path){
   const parts=path.split('/');
   $('breadcrumb').replaceChildren();
@@ -297,9 +377,11 @@ function route(){
   if(location.pathname==='/recently-edited'&&!location.hash.startsWith('#/page/')){navigateRecent();return;}
   let path='Home';
   try{
-    if(location.hash.startsWith('#/page/')){
-      path=decodeURIComponent(location.hash.slice(7));history.replaceState(null,'',pageURL(path));
-    }else if(location.pathname.startsWith('/page/'))path=decodeURIComponent(location.pathname.slice(6))||'Home';
+    const legacyHash=location.hash.startsWith('#/page/');
+    if(legacyHash)path=decodeURIComponent(location.hash.slice(7));
+    else path=decodeURIComponent(location.pathname.replace(/^\/page\//,'/').slice(1).replace(/\/+$/,''))||'Home';
+    const canonical=pageURL(path);
+    if(legacyHash||(location.pathname!=='/'&&location.pathname!==canonical))history.replaceState(null,'',canonical+location.search+(legacyHash?'':location.hash));
   }catch{toast('Invalid page link');}
   navigate(path);
 }
@@ -310,7 +392,10 @@ document.addEventListener('click',event=>{
   if(event.defaultPrevented||event.button!==0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
   const link=event.target.closest('a[href]');if(!link||link.hasAttribute('download')||(link.target&&link.target!=='_self'))return;
   const url=new URL(link.href,location.href);
-  if(url.origin===location.origin&&(url.pathname.startsWith('/page/')||url.pathname==='/recently-edited')){
+  const root=decodeURIComponent(url.pathname.split('/')[1]||'');
+  const wikiPath=!reservedPageRoots.has(root)||url.pathname.startsWith('/page/')||url.pathname==='/recently-edited';
+  const localAnchor=url.pathname===location.pathname&&url.hash&&!url.hash.startsWith('#/page/');
+  if(url.origin===location.origin&&wikiPath&&!localAnchor){
     event.preventDefault();history.pushState(null,'',url.pathname+url.search+url.hash);route();
   }
 });

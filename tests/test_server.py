@@ -22,6 +22,38 @@ class StoreTests(unittest.TestCase):
         self.store = app.Store(self.temp.name)
     def tearDown(self):
         self.temp.cleanup()
+    def test_sidebar_order_persists_without_changing_pages(self):
+        for name in ['Games', 'Games/Owned', 'Games/Completed', 'Home', 'Notes/Child']:
+            self.store.save(name, '# '+name)
+        before={p['path']: self.store.read(p['path']) for p in self.store.listing()}
+        root=self.store.reorder_pages('', ['Notes', 'Home', 'Games'], None)
+        nested=self.store.reorder_pages('Games', ['Games/Owned', 'Games/Completed'], root['revision'])
+        restarted=app.Store(self.temp.name)
+        self.assertEqual(restarted.page_order(), nested)
+        self.assertEqual(nested['parents'][''], ['Notes', 'Home', 'Games'])
+        self.assertEqual({p['path']: restarted.read(p['path']) for p in restarted.listing()}, before)
+        # Deleted entries disappear naturally; new siblings can be ordered.
+        page=self.store.read('Games/Completed')
+        self.store.delete(page['path'], page['revision'])
+        self.store.save('Games/New', '# New')
+        new=self.store.reorder_pages('Games', ['Games/New', 'Games/Owned'], nested['revision'])
+        self.assertEqual(new['parents']['Games'], ['Games/New', 'Games/Owned'])
+
+    def test_sidebar_order_rejects_invalid_and_concurrent_changes(self):
+        for name in ['A', 'B', 'A/Child']:self.store.save(name, name)
+        for parent,children in [('', ['A']), ('', ['A','A']), ('', ['A','A/Child']), ('Missing', [])]:
+            with self.assertRaises(app.Problem) as caught:self.store.reorder_pages(parent, children, None)
+            self.assertEqual(caught.exception.status,409)
+        with self.assertRaises(app.Problem) as caught:self.store.reorder_pages('', 'A', None)
+        self.assertEqual(caught.exception.status,400)
+        def write(i):
+            try:self.store.reorder_pages('', ['A','B'] if i%2 else ['B','A'], None);return 200
+            except app.Problem as error:return error.status
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+            results=list(pool.map(write,range(6)))
+        self.assertEqual(results.count(200),1)
+        self.assertEqual(results.count(409),5)
+
     def test_crud_search_and_restart(self):
         page = self.store.save('Games/Completed games', '# Finished\nCafé and Zelda')
         self.assertEqual(Path(self.temp.name, 'pages/Games/Completed games.md').read_text(), page['content'])
@@ -142,6 +174,22 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(struct.unpack('<HHH',ico[:6]),(0,1,1))
         self.assertEqual(ico[22:],png)
 
+    def test_root_page_urls_preserve_application_routes(self):
+        self.server.store.save('Route checks/Owned','# Owned')
+        self.server.store.save('api/Notes','# Notes')
+        status,body,headers=self.request('/Route%20checks/Owned')
+        self.assertEqual(status,200);self.assertTrue(headers['Content-Type'].startswith('text/html'))
+        self.assertIn(b'<title>Homewiki</title>',body)
+        self.assertEqual(self.request('/page/Route%20checks/Owned')[0],200)
+        self.assertEqual(self.request('/page/api/Notes')[0],200)
+        status,body,_=self.request('/Missing')
+        self.assertEqual(status,404);self.assertIn(b'<!doctype html>',body)
+        status,body,_=self.request('/api/missing')
+        self.assertEqual(status,404);self.assertIn('error',json.loads(body))
+        self.assertEqual(self.request('/uploads/missing.png')[0],404)
+        status,body,_=self.request('/server.py')
+        self.assertEqual(status,404);self.assertNotIn(b'import argparse',body)
+
     def test_private_request_guards(self):
         self.assertEqual(self.request('/api/pages',headers={'Host':'attacker.example'})[0],403)
         self.assertEqual(self.request('/api/pages',headers={'Origin':'https://attacker.example'})[0],403)
@@ -171,6 +219,21 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(self.request('/api/upload',PNG,{**headers,'Origin':'http://attacker.example'})[0],403)
         self.assertEqual(self.request('/api/upload',b'<svg/>',headers)[0],415)
         self.assertEqual(self.request('/uploads/../server.py')[0],404)
+
+    def test_sidebar_order_http(self):
+        self.server.store.save('Ordering/Child', '# Child')
+        status,raw,_=self.request('/api/order')
+        self.assertEqual(status,200)
+        revision=json.loads(raw)['revision']
+        roots=sorted({page['path'].split('/')[0] for page in self.server.store.listing()},reverse=True)
+        body={'parent':'','children':roots,'revision':revision}
+        self.assertEqual(self.request('/api/order',body)[0],403)
+        headers={'Content-Type':'application/json','X-Homewiki':'1'}
+        status,raw,_=self.request('/api/order',body,headers)
+        self.assertEqual(status,200)
+        self.assertEqual(json.loads(raw)['parents'][''],roots)
+        self.assertEqual(self.request('/api/order',body,headers)[0],409)
+        self.assertEqual(json.loads(self.request('/api/order')[1]),json.loads(raw))
 
     def test_bad_payload(self):
         self.assertEqual(self.request('/api/save',[],{'Content-Type':'application/json','X-Homewiki':'1'})[0],400)

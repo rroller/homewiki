@@ -14,7 +14,7 @@ import threading
 import uuid
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import urlparse, parse_qs, unquote
 
 STATIC = Path(__file__).parent / 'static'
 MAX_BODY = 2 * 1024 * 1024
@@ -120,6 +120,43 @@ class Store:
                 continue
             result.append({'path': name, 'excerpt': ' '.join(content.split())[:180], 'modified': page['modified']})
         return result
+
+    def page_order(self):
+        path = self.root / '.sidebar-order.json'
+        if path.is_symlink():
+            raise Problem(400, 'Symlinks are not supported')
+        try:
+            raw = path.read_bytes()
+        except FileNotFoundError:
+            return {'parents': {}, 'revision': None}
+        try:
+            value = json.loads(raw)
+            parents = value['parents']
+            if not isinstance(parents, dict) or any(not isinstance(k, str) or not isinstance(v, list) or any(not isinstance(item, str) for item in v) for k, v in parents.items()):
+                raise ValueError('Invalid order file')
+        except (ValueError, KeyError, TypeError):
+            raise Problem(500, 'Sidebar order data is invalid. Restore its backup or correct .sidebar-order.json.')
+        return {'parents': parents, 'revision': hashlib.sha256(raw).hexdigest()}
+
+    def reorder_pages(self, parent, children, revision):
+        if not isinstance(parent, str) or not isinstance(children, list) or any(not isinstance(child, str) for child in children):
+            raise Problem(400, 'Invalid page order')
+        with self.locked():
+            siblings = set()
+            for page in self.listing():
+                parts = page['path'].split('/')
+                for index in range(len(parts)):
+                    if '/'.join(parts[:index]) == parent:
+                        siblings.add('/'.join(parts[:index+1]))
+            if not siblings or len(children) != len(siblings) or set(children) != siblings:
+                raise Problem(409, 'The page list changed. Refresh and try reordering again.')
+            current = self.page_order()
+            if current['revision'] != revision:
+                raise Problem(409, 'The sidebar order changed in another tab. Refresh and try again.')
+            parents = dict(current['parents'])
+            parents[parent] = children
+            self.atomic(self.root / '.sidebar-order.json', json.dumps({'version': 1, 'parents': parents}, ensure_ascii=False, indent=2))
+            return self.page_order()
 
     def check(self, name, revision):
         current = self.read(name)
@@ -256,6 +293,8 @@ class Handler(BaseHTTPRequestHandler):
                     raw, kind = store.read_image(url.path[len('/uploads/'):])
                     self.reply(200, raw, kind)
                     return
+                elif url.path == '/api/order':
+                    data = store.page_order()
                 elif url.path == '/api/trash':
                     data = store.deleted()
                 elif url.path in ('/', '/app.js', '/style.css', '/favicon.png', '/favicon.ico', '/recently-edited') or url.path.startswith('/page/'):
@@ -263,8 +302,14 @@ class Handler(BaseHTTPRequestHandler):
                     kind = {'html': 'text/html', 'js': 'text/javascript', 'css': 'text/css', 'png': 'image/png', 'ico': 'image/x-icon'}[file.suffix[1:]]
                     self.reply(200, file.read_bytes(), kind + ('; charset=utf-8' if kind.startswith('text/') else ''))
                     return
-                else:
+                elif url.path == '/api' or url.path.startswith('/api/') or url.path == '/uploads':
                     raise Problem(404, 'Not found')
+                else:
+                    # Root-level wiki URLs serve only the app shell, never arbitrary files.
+                    name = unquote(url.path.lstrip('/').rstrip('/'))
+                    status = 200 if store.path(name).is_file() else 404
+                    self.reply(status, (STATIC / 'index.html').read_bytes(), 'text/html; charset=utf-8')
+                    return
             elif self.command == 'POST':
                 if url.path == '/api/upload':
                     if self.headers.get('X-Homewiki') != '1':
@@ -291,6 +336,8 @@ class Handler(BaseHTTPRequestHandler):
                 name, revision = body.get('path'), body.get('revision')
                 if url.path == '/api/save':
                     data = store.save(name, body.get('content'), revision)
+                elif url.path == '/api/order':
+                    data = store.reorder_pages(body.get('parent'), body.get('children'), revision)
                 elif url.path == '/api/rename':
                     data = store.rename(name, body.get('target'), revision)
                 elif url.path == '/api/delete':

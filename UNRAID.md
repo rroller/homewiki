@@ -50,7 +50,7 @@ Open **Docker → Add Container**, then select **homewiki** in the **Template** 
 
 **Allowed hosts** takes exact hostnames/IPs without a scheme, path, or port. For example: `192.168.1.10,wiki.example.com`. Localhost is always allowed. If you access Homewiki through a reverse proxy, include the hostname that the browser uses and preserve the intended private network/access controls.
 
-Click **Apply**. When the container is running, use its **WebUI** menu item or open `http://YOUR_UNRAID_IP:18080/page/Home`. Turn on its **Autostart** toggle if it should start with Unraid.
+Click **Apply**. When the container is running, use its **WebUI** menu item or open `http://YOUR_UNRAID_IP:18080/Home`. Turn on its **Autostart** toggle if it should start with Unraid.
 
 The template provides a read-only app filesystem, a temporary `/tmp`, dropped Linux capabilities, and no privilege escalation. Homewiki has no login system; anyone who can reach it can read and edit pages. Use a trusted private network or separate access controls.
 
@@ -63,6 +63,7 @@ data/
   pages/       Markdown pages in nested folders
   uploads/     Dropped, pasted, and selected images
   .trash/      Recoverable deleted pages
+  .sidebar-order.json  Shared sidebar ordering
   .initialized
   .lock
 ```
