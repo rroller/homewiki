@@ -43,3 +43,6 @@ screenshots/
 *.tar
 *.tar.gz
 .DS_Store
+
+# Generated image build metadata.
+/REVISION

@@ -631,3 +631,20 @@ async function checkUpdates(){
 }
 window.addEventListener('focus',checkUpdates);setInterval(checkUpdates,10000);
 refreshPages().then(route).catch(error=>notice('Unable to connect to Homewiki: '+error.message));
+
+
+// Independent of page loading, so a missing version never blocks the wiki.
+async function showRunningVersion(){
+  const label=$('build-version');
+  try{
+    const version=await api('version');
+    if(!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(version.revision||'')){label.textContent='Development';return;}
+    const link=document.createElement('a');
+    link.href='https://github.com/rroller/homewiki/commit/'+version.revision;
+    link.textContent=version.revision.slice(0,7)+(version.dirty?'*':'');
+    link.title=version.revision+(version.dirty?' · Local checkout has uncommitted changes':'');
+    link.setAttribute('aria-label','View running version '+version.revision.slice(0,7)+' on GitHub');
+    link.target='_blank';link.rel='noopener noreferrer';label.replaceChildren(link);
+  }catch{label.textContent='Version unavailable';}
+}
+showRunningVersion();
