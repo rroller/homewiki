@@ -190,6 +190,38 @@ Bookmark forms keep drafts in this browser. Reopen Add/Edit after a reload to re
 
 Bookmark data, tags, and the full-text index live in bookmarks.sqlite3 under the existing data directory. Wiki Markdown storage is unchanged. Include the whole data directory in stopped-container backups; do not commit bookmark databases or extracted text to Git. Docker and Unraid need no extra mount or service.
 
+## Save from Safari, a bookmarklet, or an extension
+
+Open **Bookmarks → Save from browser** (the /bookmarks/tools page) using the same Homewiki address you normally use on your phone. The page generates a **Save to Homewiki** bookmarklet for that address.
+
+On iPhone Safari:
+
+1. Tap **Copy bookmarklet**.
+2. Use Safari’s **Share → Add Bookmark**, name it **Save to Homewiki**, and save it in **Favorites**.
+3. Open **Bookmarks → Favorites → Edit**, edit that bookmark, and replace its address with the copied code, including the leading javascript:.
+4. While reading a page, open Favorites and tap **Save to Homewiki**. The capture form receives its URL, current title, and any selected text. Review the fields, add tags, and tap **Save bookmark**. Use Back to return to the original page.
+
+On desktop, drag the **Save to Homewiki** link to your bookmarks bar. Some pages or browsers block bookmarklets; a shortcut or extension can open the capture address directly instead. See [Apple’s Safari bookmark guide](https://support.apple.com/guide/iphone/bookmark-a-website-iph42ab2f3a7/ios) and [JavaScript URL limitations](https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/javascript).
+
+### Capture address
+
+The dedicated page is **/bookmarks/add**. Opening it only prepares a form; saving always requires a click. It works as a direct link, a mobile shortcut target, or a destination opened by a browser extension.
+
+```text
+/bookmarks/add?url=https%3A%2F%2Fexample.com%2Farticle&title=Article%20title
+```
+
+| Query parameter | Purpose |
+| --- | --- |
+| url | The page address, URL-encoded. |
+| title | Optional prefilled title; omitted titles are looked up automatically. |
+| description | Optional notes or selected text. |
+| text | Shared text; if url is omitted, its first HTTP(S) URL is used and the remainder becomes notes. |
+| tags | Optional comma-separated tags. Repeated tag parameters also work. |
+| extract | Page-text saving defaults on; use 0 or false to start unchecked. |
+
+Titles, notes, and tags remain editable. Capture drafts are kept separately for each shared URL and do not replace an unfinished bookmark in the normal Add dialog. A successful save clears the source parameters so reloading does not submit or repeat it. The capture page does not follow return-URL parameters or save/edit a bookmark from query parameters alone.
+
 ## Page history
 
 Open **••• → Page history** to browse earlier saved versions. Choose a version to see a highlighted comparison against the current page, or switch to **Saved Markdown** to read its full source. Minus lines belong to the selected version; plus lines belong to the current page.

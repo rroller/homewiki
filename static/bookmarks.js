@@ -20,19 +20,29 @@ function navigateBookmarks(){
   notice('');$('reader').hidden=true;$('editor').hidden=true;$('edit-page').hidden=true;$('more').hidden=true;$('actions').hidden=true;$('page-footer').hidden=true;
   $('recently-edited').removeAttribute('aria-current');$('bookmarks-open').setAttribute('aria-current','page');
   const view=$('bookmarks-view');view.hidden=false;view.replaceChildren();
-  const mode=location.pathname==='/bookmarks/tags'?'tags':location.pathname==='/bookmarks/domains'?'domains':'links';
+  const mode=location.pathname==='/bookmarks/add'?'add':location.pathname==='/bookmarks/tools'?'tools':location.pathname==='/bookmarks/tags'?'tags':location.pathname==='/bookmarks/domains'?'domains':'links';
   const params=new URLSearchParams(location.search);
   const filter={q:params.get('q')||'',tags:params.getAll('tag'),domain:params.get('domain')||'',sort:params.get('sort')||'newest',page:Math.max(0,Math.min(2500,Math.trunc(Number(params.get('page'))||0)))};
-  const heading=mode==='tags'?'Bookmark tags':mode==='domains'?'Bookmark domains':'Bookmarks';
+  const heading=mode==='add'?'Add bookmark':mode==='tools'?'Save from your browser':mode==='tags'?'Bookmark tags':mode==='domains'?'Bookmark domains':'Bookmarks';
   $('page-title').textContent=heading;document.title=heading+' · Homewiki';renderBreadcrumb('Bookmarks');
   if(mode!=='links'){
-    const crumb=$('breadcrumb');crumb.replaceChildren(bookmarkLink('Bookmarks','/bookmarks'),bmElement('span','breadcrumb-separator','/'),bmElement('span','',mode==='tags'?'Tags':'Domains'));
+    const crumb=$('breadcrumb');crumb.replaceChildren(bookmarkLink('Bookmarks','/bookmarks'),bmElement('span','breadcrumb-separator','/'),bmElement('span','',mode==='add'?'Add bookmark':mode==='tools'?'Save from your browser':mode==='tags'?'Tags':'Domains'));
   }
   const toolbar=bmElement('div','bookmark-toolbar'),nav=bmElement('nav','bookmark-nav');nav.setAttribute('aria-label','Bookmark library');
-  for(const [label,url,selected] of [['Recent','/bookmarks',mode==='links'],['Tags','/bookmarks/tags',mode==='tags'],['Domains','/bookmarks/domains',mode==='domains']]){
+  for(const [label,url,selected] of [['Recent','/bookmarks',mode==='links'],['Tags','/bookmarks/tags',mode==='tags'],['Domains','/bookmarks/domains',mode==='domains'],['Save from browser','/bookmarks/tools',mode==='tools']]){
     const link=bookmarkLink(label,url);if(selected)link.setAttribute('aria-current','page');nav.append(link);
   }
-  const add=bmElement('button','primary-button','Add bookmark');add.id='add-bookmark';add.onclick=()=>bookmarkForm();toolbar.append(nav,add);view.append(toolbar);
+  toolbar.append(nav);
+  if(mode!=='add'){const add=bmElement('button','primary-button','Add bookmark');add.id='add-bookmark';add.onclick=()=>bookmarkForm();toolbar.append(add);}
+  view.append(toolbar);
+  if(mode==='add'||mode==='tools'){
+    if(mode==='add'){
+      const intro=bmElement('p','bookmark-capture-intro','Review the link, add any tags or notes, then save it to your library.');view.append(intro);
+      const mount=bmElement('div','bookmark-capture-form');view.append(mount);
+      bookmarkForm(null,{mount,prefill:bookmarkCaptureValues(params)});
+    }else renderBookmarkTools(view);
+    renderTree();if(innerWidth<721)sidebar(true);window.scrollTo(0,0);return;
+  }
   const results=bmElement('div','bookmark-results');results.setAttribute('aria-live','polite');
   if(mode==='links'){
     const controls=bmElement('div','bookmark-controls'),search=document.createElement('input');search.type='search';search.id='bookmark-search';search.placeholder='Search bookmarks and saved page text…';search.setAttribute('aria-label','Search bookmarks');search.maxLength=500;search.value=filter.q;
@@ -128,13 +138,15 @@ function bookmarkText(id){
     view.append(bmElement('p','',bookmark.title),bmElement('pre','bookmark-saved-text',bookmark.page_text||'No page text has been saved.'));
   }).catch(error=>{if(view.isConnected){view.replaceChildren();errorInto(view,error);}});
 }
-async function bookmarkForm(id=null){
-  const body=modal(id?'Edit bookmark':'Add bookmark'),view=bmElement('div');view.textContent='Loading…';body.append(view);
+async function bookmarkForm(id=null,options={}){
+  const embedded=Boolean(options.mount),body=options.mount||modal(id?'Edit bookmark':'Add bookmark'),view=bmElement('div');view.textContent='Loading…';body.append(view);
   let bookmark={url:'',title:'',description:'',tags:[],revision:null};
   try{if(id)bookmark=await api('bookmarks/item?id='+id);}catch(error){view.replaceChildren();errorInto(view,error);return;}
-  if(!view.isConnected||!$('modal').open)return;
+  const present=()=>view.isConnected&&(embedded?state.bookmarks&&location.pathname==='/bookmarks/add':$('modal').open);
+  if(!present())return;
   view.replaceChildren();
-  const prefix='homewiki:bookmark-draft:'+(id||'new')+':',key=prefix+tabID;
+  const scope=embedded?'capture:'+encodeURIComponent(options.prefill?.url||'new'):(id||'new');
+  const prefix='homewiki:bookmark-draft:'+scope+':',key=prefix+tabID;
   let recovered=null,recoveredKey=null,recoveredRaw=null;
   try{
     recovered=JSON.parse(stored(key,'null'));
@@ -147,7 +159,7 @@ async function bookmarkForm(id=null){
   function clearDraft(){
     try{localStorage.removeItem(key);if(recoveredKey&&localStorage.getItem(recoveredKey)===recoveredRaw)localStorage.removeItem(recoveredKey);}catch{}
   }
-  const initial=recovered||{...bookmark,extract:!id};
+  const initial=recovered||{...bookmark,extract:!id,...(options.prefill||{})};
   const form=document.createElement('form');form.id='bookmark-form';
   form.innerHTML='<label for="bookmark-url">Web address</label><input id="bookmark-url" type="text" required maxlength="4096" placeholder="https://example.com"><label for="bookmark-title">Title (optional)</label><input id="bookmark-title" type="text" maxlength="300" placeholder="Leave blank to use the page title"><p id="bookmark-title-status" class="bookmark-form-hint" role="status"></p><label for="bookmark-description">Short description</label><textarea id="bookmark-description" maxlength="2000" rows="3"></textarea><label for="bookmark-tags">Tags</label><input id="bookmark-tags" type="text"><p class="bookmark-form-hint">Separate tags with commas. Multiword tags are welcome.</p><label class="bookmark-extract"><input id="bookmark-extract" type="checkbox"> Save page text for search</label><p class="bookmark-form-hint">Optional. Reads public HTML or text pages; links can be saved even if extraction fails.</p><p id="bookmark-draft-status" role="status"></p><div class="dialog-buttons"><button type="button" class="subtle-button" id="bookmark-cancel">Cancel</button><button class="primary-button" type="submit">Save bookmark</button></div>';
   view.append(form);
@@ -157,7 +169,7 @@ async function bookmarkForm(id=null){
   const values=()=>({id:id||undefined,url:$('bookmark-url').value,title:$('bookmark-title').value,description:$('bookmark-description').value,tags:$('bookmark-tags').value.split(',').map(tag=>tag.trim()).filter(Boolean),extract:$('bookmark-extract').checked,revision:recovered?recovered.revision:bookmark.revision,titleEdited,updated:Date.now()});
   form.oninput=()=>{$('bookmark-draft-status').textContent=setStored(key,JSON.stringify(values()))?'Draft saved in this browser.':'Browser storage unavailable; keep this dialog open.';};
   const urlField=$('bookmark-url'),titleField=$('bookmark-title'),titleStatus=$('bookmark-title-status');
-  const active=()=>view.isConnected&&$('modal').open&&!submitting;
+  const active=()=>present()&&!submitting;
   const keepDraft=()=>{if(active())form.oninput();};
   async function lookupTitle(url,sequence){
     if(!active()||titleEdited||sequence!==titleSequence)return;
@@ -185,8 +197,9 @@ async function bookmarkForm(id=null){
   urlField.addEventListener('blur',()=>{if(!lookupRunning&&lastLookup!==urlField.value.trim())scheduleTitle(true);});
   titleField.addEventListener('input',()=>{titleEdited=true;titleSequence++;clearTimeout(titleTimer);queuedLookup=null;titleStatus.textContent='';});
   if(!titleEdited&&urlField.value.trim())scheduleTitle();
-  $('bookmark-cancel').onclick=closeModal;
-  const discard=bmElement('button','subtle-button','Discard draft');discard.type='button';discard.onclick=()=>{clearDraft();closeModal();};
+  const exit=()=>{if(embedded){history.pushState(null,'','/bookmarks');route();}else closeModal();};
+  $('bookmark-cancel').onclick=exit;
+  const discard=bmElement('button','subtle-button','Discard draft');discard.type='button';discard.onclick=()=>{clearDraft();exit();};
   form.querySelector('.dialog-buttons').prepend(discard);
   form.onsubmit=async event=>{
     event.preventDefault();submitting=true;titleSequence++;clearTimeout(titleTimer);queuedLookup=null;const button=form.querySelector('[type=submit]');button.disabled=true;
@@ -194,11 +207,18 @@ async function bookmarkForm(id=null){
     try{
       const saved=await api('bookmarks/save',value);
       clearDraft();
-      closeModal();
-      if(!state.bookmarks){history.pushState(null,'','/bookmarks');route();}else navigateBookmarks();
+      if(embedded){
+        if(present())showBookmarkCaptureSuccess(options.mount,saved);
+      }else{
+        closeModal();
+        if(!state.bookmarks){history.pushState(null,'','/bookmarks');route();}else navigateBookmarks();
+      }
       toast(saved.extraction_status==='failed'?'Bookmark saved. Page text could not be saved; you can retry later.':'Bookmark saved');
     }catch(error){
       errorInto(view,error);button.disabled=false;submitting=false;
+      if(embedded&&!id&&error.status===409&&!view.querySelector('.bookmark-existing-link')){
+        view.append(bookmarkLink('Find this bookmark in your library',bookmarkURL({q:value.url}),'bookmark-existing-link'));
+      }
       if(error.status===409&&id&&!view.querySelector('.bookmark-reload')){
         const reload=bmElement('button','subtle-button bookmark-reload','Compare latest bookmark');
         reload.onclick=async()=>{
@@ -217,4 +237,67 @@ async function bookmarkForm(id=null){
     }
   };
   $('bookmark-url').focus();
+}
+
+function bookmarkCaptureValues(params){
+  const text=params.get('text')||'';
+  const url=params.get('url')||(text.match(/https?:\/\/[^\s<>"\u0000-\u001f]+/i)?.[0]||'');
+  const description=params.has('description')?params.get('description'):text.replace(url,'').trim();
+  const tags=[...(params.get('tags')||'').split(','),...params.getAll('tag')].map(value=>value.trim()).filter(Boolean);
+  return {url,title:(params.get('title')||'').trim().slice(0,300),description:(description||'').slice(0,2000),tags,
+    extract:!['0','false'].includes((params.get('extract')||'').toLowerCase())};
+}
+function showBookmarkCaptureSuccess(mount,bookmark){
+  mount.replaceChildren();history.replaceState(null,'','/bookmarks/add');
+  $('page-title').textContent='Bookmark saved';document.title='Bookmark saved · Homewiki';
+  const card=bmElement('div','bookmark-capture-success');card.setAttribute('role','status');
+  card.append(bmElement('p','','Saved to your Homewiki library.'));
+  const original=bookmarkLink(bookmark.title,bookmark.url,'bookmark-title');original.target='_blank';original.rel='noopener noreferrer';card.append(original);
+  if(bookmark.extraction_status==='failed')card.append(bmElement('p','bookmark-form-hint','The link is saved. Its page text could not be fetched; you can retry from the library.'));
+  const links=bmElement('div','bookmark-capture-links');
+  links.append(bookmarkLink('View bookmarks','/bookmarks'),bookmarkLink('Add another','/bookmarks/add'));
+  card.append(links,bmElement('p','bookmark-form-hint','Use your browser’s Back button to return to the page you were reading.'));
+  mount.append(card);
+}
+function homewikiBookmarklet(base=location.origin+'/bookmarks/add'){
+  return 'javascript:void(function(){var p=new URLSearchParams({url:location.href,title:document.title.slice(0,300),description:String(window.getSelection?window.getSelection():"").trim().slice(0,2000)});location.assign('+JSON.stringify(base)+'+"?"+p.toString());}());';
+}
+async function copyBookmarkTool(area,message){
+  try{
+    if(navigator.clipboard?.writeText)await navigator.clipboard.writeText(area.value);
+    else{area.focus();area.select();area.setSelectionRange(0,area.value.length);if(!document.execCommand('copy'))throw new Error();}
+    toast(message);
+  }catch{area.focus();area.select();area.setSelectionRange(0,area.value.length);toast('Select Copy to copy the highlighted text.');}
+}
+function renderBookmarkTools(view){
+  view.append(bmElement('p','bookmark-capture-intro','Save the page you are reading to Homewiki, then review its title, notes, and tags before saving.'));
+  const setup=bmElement('section','bookmark-tool-card');
+  setup.append(bmElement('h2','','Save to Homewiki bookmarklet'));
+  const install=bookmarkLink('Save to Homewiki',homewikiBookmarklet(),'bookmarklet-install');install.id='install-bookmarklet';install.draggable=true;
+  install.title='Drag this to your bookmarks bar, or copy its code below.';
+  install.onclick=event=>{event.preventDefault();toast('Drag this to your bookmarks bar, or use Copy bookmarklet below.');};
+  setup.append(install,bmElement('p','bookmark-form-hint','On a desktop, drag this link to your bookmarks bar. It opens the capture form in the current tab.'));
+  const label=bmElement('label','','Bookmarklet address');label.htmlFor='bookmarklet-code';
+  const code=document.createElement('textarea');code.id='bookmarklet-code';code.className='bookmark-tool-code';code.readOnly=true;code.rows=4;code.spellcheck=false;code.value=homewikiBookmarklet();
+  const copy=bmElement('button','outline-button','Copy bookmarklet');copy.type='button';copy.id='copy-bookmarklet';copy.onclick=()=>copyBookmarkTool(code,'Bookmarklet copied');
+  setup.append(label,code,copy);
+  const heading=bmElement('h3','','iPhone Safari setup'),steps=document.createElement('ol');
+  for(const text of [
+    'Tap Copy bookmarklet above.',
+    'Use Safari’s Share menu → Add Bookmark. Name it “Save to Homewiki” and save it in Favorites.',
+    'Open Bookmarks → Favorites → Edit. Edit that bookmark and replace its address with the copied bookmarklet address, including javascript: at the start.',
+    'While reading any page, open Favorites and tap Save to Homewiki. Review the filled form, add tags, and tap Save bookmark.'
+  ])steps.append(bmElement('li','',text));
+  setup.append(heading,steps,bmElement('p','bookmark-form-hint','If copying is unavailable, select the address above and use Copy. Some browsers or websites block bookmarklets; a browser extension or an iOS Shortcut can open the capture URL below instead.'));
+  const help=bookmarkLink('Safari bookmark help','https://support.apple.com/guide/iphone/bookmark-a-website-iph42ab2f3a7/ios');help.target='_blank';help.rel='noopener noreferrer';setup.append(help);
+  view.append(setup);
+  const integration=bmElement('section','bookmark-tool-card');integration.append(bmElement('h2','','Capture URL for extensions and shortcuts'));
+  const address=location.origin+'/bookmarks/add';
+  integration.append(bookmarkLink('Open Add bookmark',address));
+  const addressLabel=bmElement('label','','Capture address');addressLabel.htmlFor='bookmark-capture-address';
+  const field=document.createElement('input');field.type='text';field.id='bookmark-capture-address';field.readOnly=true;field.value=address;
+  const copyAddress=bmElement('button','outline-button','Copy capture address');copyAddress.type='button';copyAddress.onclick=()=>copyBookmarkTool(field,'Capture address copied');
+  const example=bmElement('pre','bookmark-tool-example',address+'?url='+encodeURIComponent('https://example.com/article')+'&title='+encodeURIComponent('Article title'));
+  integration.append(addressLabel,field,copyAddress,example,bmElement('p','bookmark-form-hint','Pass URL-encoded url and optional title, description, tags, or repeated tag parameters. A text parameter can contain a shared URL and notes. Omit title to look it up automatically. Add extract=0 to start without page-text saving. Opening the address never saves a bookmark automatically.'));
+  view.append(integration);
 }

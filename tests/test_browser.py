@@ -454,6 +454,141 @@ class BrowserTests(unittest.TestCase):
         p.reload();expect(p.locator('#build-version')).to_have_text('Version unavailable')
         expect(p.locator('#content')).to_contain_text('Welcome to Homewiki')
 
+    def test_capture_page_prefills_reviews_and_saves_without_a_modal(self):
+        from urllib.parse import urlencode
+        p=self.page
+        target='https://example.com/article?x=a%2Bb&other=1#section'
+        query=urlencode({'url':target,'title':'Article & notes','description':'Selected words <not HTML>','tags':'reading, reference','extract':'0','save':'1'})
+        p.goto(self.url+'/bookmarks/add?'+query)
+        expect(p.locator('#page-title')).to_have_text('Add bookmark')
+        expect(p.locator('#modal')).not_to_be_visible()
+        expect(p.get_by_label('Web address',exact=True)).to_have_value(target)
+        expect(p.get_by_label('Title (optional)',exact=True)).to_have_value('Article & notes')
+        expect(p.get_by_label('Short description',exact=True)).to_have_value('Selected words <not HTML>')
+        expect(p.get_by_label('Tags',exact=True)).to_have_value('reading, reference')
+        expect(p.get_by_label('Save page text for search',exact=True)).not_to_be_checked()
+        self.assertEqual(self.store.bookmarks.listing()['total'],0)
+        p.get_by_label('Title (optional)',exact=True).fill('My reviewed title')
+        p.get_by_role('button',name='Save bookmark',exact=True).click()
+        expect(p.locator('.bookmark-capture-success')).to_be_visible()
+        expect(p.locator('#page-title')).to_have_text('Bookmark saved')
+        self.assertEqual(p.url,self.url+'/bookmarks/add')
+        saved=self.store.bookmarks.listing()['items'][0]
+        self.assertEqual(saved['url'],target)
+        self.assertEqual(saved['title'],'My reviewed title')
+        self.assertEqual(saved['tags'],['reading','reference'])
+        self.assertEqual(saved['description'],'Selected words <not HTML>')
+        p.reload()
+        expect(p.locator('#page-title')).to_have_text('Add bookmark')
+        expect(p.get_by_label('Web address',exact=True)).to_have_value('')
+        self.assertEqual(self.store.bookmarks.listing()['total'],1)
+
+    def test_capture_shared_text_finds_url_and_autofills_title_on_mobile(self):
+        from urllib.parse import urlencode
+        p=self.page
+        p.set_viewport_size({'width':390,'height':844})
+        p.unroute('**/api/bookmarks/title')
+        p.route('**/api/bookmarks/title',lambda route:route.fulfill(json={'title':'An automatically resolved article'}))
+        query=urlencode({'text':'Read this later https://example.com/shared?one=1&two=2','tag':['mobile','reading']},doseq=True)
+        p.goto(self.url+'/bookmarks/add/?'+query)
+        expect(p.get_by_label('Web address',exact=True)).to_have_value('https://example.com/shared?one=1&two=2')
+        expect(p.get_by_label('Title (optional)',exact=True)).to_have_value('An automatically resolved article')
+        expect(p.get_by_label('Short description',exact=True)).to_have_value('Read this later')
+        expect(p.get_by_label('Tags',exact=True)).to_have_value('mobile, reading')
+        expect(p.get_by_label('Save page text for search',exact=True)).to_be_checked()
+        self.assertTrue(p.evaluate('document.documentElement.scrollWidth<=innerWidth'))
+        p.get_by_role('button',name='Save bookmark',exact=True).scroll_into_view_if_needed()
+        expect(p.get_by_role('button',name='Save bookmark',exact=True)).to_be_visible()
+        self.assertEqual(self.store.bookmarks.listing()['total'],0)
+        p.get_by_label('Title (optional)',exact=True).fill('A'*300)
+        p.get_by_label('Save page text for search',exact=True).uncheck()
+        p.get_by_role('button',name='Save bookmark',exact=True).click()
+        expect(p.locator('.bookmark-capture-success')).to_be_visible()
+        self.assertTrue(p.evaluate('document.documentElement.scrollWidth<=innerWidth'))
+
+    def test_capture_drafts_are_separate_for_each_shared_url_and_modal(self):
+        from urllib.parse import urlencode
+        p=self.page
+        p.locator('#bookmarks-open').click();p.locator('#add-bookmark').click()
+        p.get_by_label('Title (optional)',exact=True).fill('My modal draft')
+        p.get_by_label('Web address',exact=True).fill('https://example.com/modal')
+        p.locator('#modal-close').click()
+        first=self.url+'/bookmarks/add?'+urlencode({'url':'https://example.com/first','title':'First shared title'})
+        second=self.url+'/bookmarks/add?'+urlencode({'url':'https://example.com/second','title':'Second shared title'})
+        p.goto(first)
+        expect(p.get_by_label('Web address',exact=True)).to_have_value('https://example.com/first')
+        p.get_by_label('Short description',exact=True).fill('Keep my capture draft')
+        p.reload();expect(p.get_by_label('Short description',exact=True)).to_have_value('Keep my capture draft')
+        p.goto(second);expect(p.get_by_label('Title (optional)',exact=True)).to_have_value('Second shared title')
+        expect(p.get_by_label('Short description',exact=True)).to_have_value('')
+        p.goto(first);expect(p.get_by_label('Short description',exact=True)).to_have_value('Keep my capture draft')
+        p.get_by_role('button',name='Discard draft',exact=True).click()
+        expect(p.locator('#page-title')).to_have_text('Bookmarks')
+        p.locator('#add-bookmark').click()
+        expect(p.get_by_label('Web address',exact=True)).to_have_value('https://example.com/modal')
+        expect(p.get_by_label('Title (optional)',exact=True)).to_have_value('My modal draft')
+
+    def test_bookmarklet_captures_current_page_title_selection_and_encoded_url(self):
+        p=self.page
+        p.goto(self.url+'/bookmarks/tools')
+        expect(p.locator('#page-title')).to_have_text('Save from your browser')
+        code=p.locator('#bookmarklet-code').input_value()
+        self.assertTrue(code.startswith('javascript:void('))
+        self.assertIn(self.url+'/bookmarks/add',code)
+        source=self.context.new_page();source.on('pageerror',lambda error:self.errors.append(str(error)))
+        source.route('http://capture-source.test/**',lambda route:route.fulfill(
+            body='<title>Article &amp; notes</title><p id="selection">Selected notes &amp; a quote</p>',content_type='text/html'))
+        source_url='http://capture-source.test/article?plus=a%2Bb&part=2#section'
+        source.goto(source_url)
+        source.evaluate("""()=>{const range=document.createRange();range.selectNodeContents(document.querySelector('#selection'));getSelection().removeAllRanges();getSelection().addRange(range);}""")
+        source.evaluate('(address)=>{location.href=address;}',code)
+        expect(source.locator('#page-title')).to_have_text('Add bookmark')
+        expect(source.get_by_label('Web address',exact=True)).to_have_value(source_url)
+        expect(source.get_by_label('Title (optional)',exact=True)).to_have_value('Article & notes')
+        expect(source.get_by_label('Short description',exact=True)).to_have_value('Selected notes & a quote')
+        self.assertEqual(self.store.bookmarks.listing()['total'],0)
+        source.get_by_label('Save page text for search',exact=True).uncheck()
+        source.get_by_role('button',name='Save bookmark',exact=True).click()
+        expect(source.locator('.bookmark-capture-success')).to_be_visible()
+        self.assertEqual(self.store.bookmarks.listing()['total'],1)
+        source.go_back()
+        expect(source).to_have_url(source_url)
+        source.close()
+
+    def test_capture_tools_have_mobile_setup_and_do_not_run_on_install_click(self):
+        p=self.page
+        p.goto(self.url+'/bookmarks/tools/')
+        expect(p).to_have_url(self.url+'/bookmarks/tools')
+        expect(p.locator('#bookmarks-view')).to_contain_text('iPhone Safari setup')
+        expect(p.locator('#bookmark-capture-address')).to_have_value(self.url+'/bookmarks/add')
+        expect(p.locator('#bookmarklet-code')).to_have_attribute('readonly','')
+        p.locator('#install-bookmarklet').click()
+        expect(p).to_have_url(self.url+'/bookmarks/tools')
+        expect(p.locator('#toast')).to_contain_text('Drag this')
+        p.locator('#copy-bookmarklet').click()
+        expect(p.locator('#toast')).to_be_visible()
+        p.set_viewport_size({'width':390,'height':844})
+        self.assertTrue(p.evaluate('document.documentElement.scrollWidth<=innerWidth'))
+        self.assertEqual(self.store.bookmarks.listing()['total'],0)
+
+    def test_untrusted_capture_parameters_do_not_execute_or_edit_existing_bookmarks(self):
+        from urllib.parse import urlencode
+        p=self.page
+        saved=self.store.bookmarks.save({'url':'https://example.com/already-saved','title':'Original title','tags':[]})
+        query=urlencode({'url':saved['url'],'title':'<img src=x onerror=alert(1)>','id':saved['id'],'revision':saved['revision'],'extract':'0','save':'1'})
+        p.goto(self.url+'/bookmarks/add?'+query)
+        expect(p.get_by_label('Title (optional)',exact=True)).to_have_value('<img src=x onerror=alert(1)>')
+        self.assertEqual(p.locator('#bookmarks-view img').count(),0)
+        self.assertEqual(self.store.bookmarks.get(saved['id']),saved)
+        p.get_by_role('button',name='Save bookmark',exact=True).click()
+        expect(p.locator('.bookmark-capture-form .error-text')).to_contain_text('already bookmarked')
+        expect(p.locator('.bookmark-existing-link')).to_have_attribute('href',re.compile(r'^/bookmarks\?q='))
+        self.assertEqual(self.store.bookmarks.get(saved['id']),saved)
+        p.get_by_label('Web address',exact=True).fill('javascript:alert(1)')
+        p.get_by_role('button',name='Save bookmark',exact=True).click()
+        expect(p.locator('.bookmark-capture-form .error-text')).to_contain_text('HTTP or HTTPS')
+        self.assertEqual(self.store.bookmarks.listing()['total'],1)
+
     def test_full_wiki_workflow(self):
         p=self.page
         # Tree and nested example pages.
