@@ -225,7 +225,7 @@ def fetch_page_text(value, *, allow_title_only=False):
 
 
 class BookmarkStore:
-    fields = 'b.id,b.url,b.title,b.description,b.domain,b.tags,b.created_at,b.updated_at,b.revision,b.deleted_at,b.extraction_status,b.extraction_error,b.extracted_at'
+    fields = 'b.id,b.url,b.title,b.domain,b.tags,b.created_at,b.updated_at,b.revision,b.deleted_at,b.extraction_status,b.extraction_error,b.extracted_at'
 
     def __init__(self, root):
         self.root = Path(root)
@@ -250,31 +250,45 @@ class BookmarkStore:
                     application = setup.execute('PRAGMA application_id').fetchone()[0]
                     if application not in (0, 1213678157) or (application == 0 and setup.execute("SELECT count(*) FROM sqlite_master WHERE type='table'").fetchone()[0]):
                         raise BookmarkError(409, 'bookmarks.sqlite3 already exists and is not a Homewiki bookmark database.')
-                    setup.executescript("""
-                        BEGIN IMMEDIATE;
-                        PRAGMA application_id=1213678157;
+                    setup.execute('BEGIN IMMEDIATE')
+                    setup.execute('PRAGMA application_id=1213678157')
+                    setup.execute("""
                         CREATE TABLE IF NOT EXISTS bookmarks(
                             rowid INTEGER PRIMARY KEY, id TEXT NOT NULL UNIQUE, url TEXT NOT NULL UNIQUE,
-                            title TEXT NOT NULL, description TEXT NOT NULL, domain TEXT NOT NULL, tags TEXT NOT NULL,
+                            title TEXT NOT NULL, domain TEXT NOT NULL, tags TEXT NOT NULL,
                             page_text TEXT NOT NULL DEFAULT '', extraction_status TEXT NOT NULL DEFAULT 'not_requested',
                             extraction_error TEXT NOT NULL DEFAULT '', extracted_at TEXT,
                             created_at TEXT NOT NULL, updated_at TEXT NOT NULL, revision TEXT NOT NULL, deleted_at TEXT
-                        );
+                        )
+                    """)
+                    setup.execute("""
                         CREATE TABLE IF NOT EXISTS bookmark_tags(
                             bookmark_id TEXT NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
                             tag TEXT NOT NULL, PRIMARY KEY(bookmark_id,tag)
-                        );
-                        CREATE INDEX IF NOT EXISTS bookmark_tag_lookup ON bookmark_tags(tag);
-                        CREATE INDEX IF NOT EXISTS bookmark_recent ON bookmarks(deleted_at,created_at);
-                        CREATE INDEX IF NOT EXISTS bookmark_domains ON bookmarks(domain,deleted_at);
-                        CREATE VIRTUAL TABLE IF NOT EXISTS bookmark_search USING fts5(
-                            title,url,description,tags,page_text,tokenize='unicode61 remove_diacritics 2'
-                        );
-                        DELETE FROM bookmark_search WHERE rowid IN (SELECT rowid FROM bookmarks WHERE deleted_at IS NOT NULL);
-                        DELETE FROM bookmark_tags WHERE bookmark_id IN (SELECT id FROM bookmarks WHERE deleted_at IS NOT NULL);
-                        DELETE FROM bookmarks WHERE deleted_at IS NOT NULL;
-                        COMMIT;
+                        )
                     """)
+                    setup.execute('CREATE INDEX IF NOT EXISTS bookmark_tag_lookup ON bookmark_tags(tag)')
+                    setup.execute('CREATE INDEX IF NOT EXISTS bookmark_recent ON bookmarks(deleted_at,created_at)')
+                    setup.execute('CREATE INDEX IF NOT EXISTS bookmark_domains ON bookmarks(domain,deleted_at)')
+                    old_description = any(column[1] == 'description' for column in setup.execute('PRAGMA table_info(bookmarks)'))
+                    if old_description:
+                        setup.execute('DROP TABLE IF EXISTS bookmark_search')
+                        setup.execute('ALTER TABLE bookmarks DROP COLUMN description')
+                    setup.execute("""
+                        CREATE VIRTUAL TABLE IF NOT EXISTS bookmark_search USING fts5(
+                            title,url,tags,page_text,tokenize='unicode61 remove_diacritics 2'
+                        )
+                    """)
+                    if old_description:
+                        setup.execute("""
+                            INSERT INTO bookmark_search(rowid,title,url,tags,page_text)
+                            SELECT rowid,title,url,
+                                COALESCE((SELECT group_concat(tag,' ') FROM bookmark_tags WHERE bookmark_id=bookmarks.id),''),
+                                page_text FROM bookmarks
+                        """)
+                    setup.execute('DELETE FROM bookmark_search WHERE rowid IN (SELECT rowid FROM bookmarks WHERE deleted_at IS NOT NULL)')
+                    setup.execute('DELETE FROM bookmark_tags WHERE bookmark_id IN (SELECT id FROM bookmarks WHERE deleted_at IS NOT NULL)')
+                    setup.execute('DELETE FROM bookmarks WHERE deleted_at IS NOT NULL')
                     setup.commit()
                 self.ready = True
         connection = sqlite3.connect(self.path, timeout=10)
@@ -310,8 +324,8 @@ class BookmarkStore:
     def index(self, connection, token):
         row = self.item(connection, token)
         connection.execute('DELETE FROM bookmark_search WHERE rowid=?', (row['rowid'],))
-        connection.execute('INSERT INTO bookmark_search(rowid,title,url,description,tags,page_text) VALUES(?,?,?,?,?,?)',
-                           (row['rowid'], row['title'], row['url'], row['description'], ' '.join(json.loads(row['tags'])), row['page_text']))
+        connection.execute('INSERT INTO bookmark_search(rowid,title,url,tags,page_text) VALUES(?,?,?,?,?)',
+                           (row['rowid'], row['title'], row['url'], ' '.join(json.loads(row['tags'])), row['page_text']))
         connection.execute('DELETE FROM bookmark_tags WHERE bookmark_id=?', (token,))
         connection.executemany('INSERT INTO bookmark_tags(bookmark_id,tag) VALUES(?,?)', [(token, tag) for tag in json.loads(row['tags'])])
 
@@ -333,9 +347,9 @@ class BookmarkStore:
 
     def save(self, body):
         url, domain = normalize_url(body.get('url'))
-        title, description = body.get('title', ''), body.get('description', '')
-        if not isinstance(title, str) or len(title) > 300 or not isinstance(description, str) or len(description) > 2000:
-            raise BookmarkError(400, 'Use a title up to 300 characters and a description up to 2000 characters.')
+        title = body.get('title', '')
+        if not isinstance(title, str) or len(title) > 300:
+            raise BookmarkError(400, 'Use a title up to 300 characters.')
         tags = normalize_tags(body.get('tags', []))
         token = body.get('id')
         if type(body.get('extract', False)) is not bool:
@@ -354,7 +368,7 @@ class BookmarkStore:
                 elif body.get('revision') is not None:
                     raise BookmarkError(409, 'This bookmark no longer exists. Your draft is kept.')
                 saved_title = title.strip() or (previous['title'] if previous and previous['url'] == url else '') or extracted.get('title') or resolved_title or domain
-                values = {'url': url, 'title': saved_title, 'description': description.strip(), 'domain': domain,
+                values = {'url': url, 'title': saved_title, 'domain': domain,
                           'tags': json.dumps(tags, ensure_ascii=False), 'updated_at': now, 'revision': uuid.uuid4().hex}
                 if previous is None or previous['url'] != url:
                     values.update(page_text='', extraction_status='not_requested', extraction_error='', extracted_at=None)
@@ -423,7 +437,7 @@ class BookmarkStore:
             join = ' JOIN bookmark_search ON bookmark_search.rowid=b.rowid'
             where.append('bookmark_search MATCH ?')
             args.append(' AND '.join('"'+term+'"'+'*' for term in terms))
-            excerpt = "snippet(bookmark_search,4,'','',' … ',32)"
+            excerpt = "snippet(bookmark_search,3,'','',' … ',32)"
         clause = ' AND '.join(where)
         with self.connection() as connection:
             total = connection.execute('SELECT count(*) FROM bookmarks b'+join+' WHERE '+clause, args).fetchone()[0]
