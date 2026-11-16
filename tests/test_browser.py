@@ -80,6 +80,68 @@ class BrowserTests(unittest.TestCase):
         expect(p.locator('.tree-row[data-parent=""]').first).to_have_attribute('data-path','Reading list')
         self.assertEqual(self.store.page_order()['parents'][''],['Reading list','Games','Home'])
 
+    def test_page_menu_creates_subpages_and_protects_existing_pages(self):
+        p=self.page
+        p.locator('#tree').get_by_role('link',name='Games',exact=True).click()
+        expect(p.locator('#breadcrumb')).to_have_text('Games')
+        before=self.store.read('Games')
+        count=len(self.store.listing())
+        # A collapsed parent opens after creation so its new child is visible.
+        p.get_by_role('button',name='Toggle Games',exact=True).click()
+        p.locator('#more').click();p.get_by_role('button',name='New subpage',exact=True).click()
+        expect(p.locator('#actions')).to_be_hidden()
+        expect(p.locator('#more')).to_have_attribute('aria-expanded','false')
+        expect(p.locator('#modal-title')).to_have_text('Create a subpage')
+        expect(p.locator('#modal-body')).to_contain_text('Create under “Games”')
+        expect(p.get_by_label('Subpage name')).to_have_value('')
+        p.get_by_label('Subpage name').fill('Cancelled')
+        p.get_by_role('button',name='Cancel',exact=True).click()
+        self.assertEqual(len(self.store.listing()),count)
+        p.locator('#more').click();p.locator('#new-subpage').click()
+        p.get_by_label('Subpage name').fill('Wish list')
+        p.get_by_role('button',name='Create page',exact=True).click()
+        expect(p.locator('#page-title')).to_have_text('Wish list')
+        self.assertEqual(p.url,self.url+'/Games/Wish%20list')
+        expect(p.locator('.tree-row[data-path="Games/Wish list"]')).to_be_visible()
+        self.assertEqual(self.store.read('Games'),before)
+        self.assertEqual(self.store.read('Games/Wish list')['content'],'# Wish list\n\n')
+        # Nested parents use their complete path.
+        p.locator('#more').click();p.locator('#new-subpage').click()
+        expect(p.locator('#modal-body')).to_contain_text('Create under “Games/Wish list”')
+        p.get_by_label('Subpage name').fill('Co-op')
+        p.get_by_role('button',name='Create page',exact=True).click()
+        expect(p.locator('#breadcrumb')).to_have_text('Games/Wish list/Co-op')
+        self.assertEqual(self.store.read('Games/Wish list/Co-op')['content'],'# Co-op\n\n')
+        # Existing names cannot be overwritten, and traversal cannot escape the parent.
+        p.locator('#tree').get_by_role('link',name='Games',exact=True).click()
+        expect(p.locator('#breadcrumb')).to_have_text('Games')
+        existing=self.store.read('Games/Completed games')
+        p.locator('#more').click();p.locator('#new-subpage').click()
+        p.get_by_label('Subpage name').fill('Completed games')
+        p.get_by_role('button',name='Create page',exact=True).click()
+        expect(p.locator('#modal .error-text')).to_be_visible()
+        self.assertEqual(self.store.read('Games/Completed games'),existing)
+        p.get_by_label('Subpage name').fill('../Outside')
+        p.get_by_role('button',name='Create page',exact=True).click()
+        expect(p.locator('#modal .error-text')).to_contain_text('Use names separated by /')
+        self.assertFalse(self.store.path('Outside').exists())
+
+    def test_subpage_creation_preserves_parent_draft_and_uses_file_path(self):
+        p=self.page
+        original=self.store.read('Home')
+        p.locator('#edit-page').click()
+        p.locator('#source').fill('# My new title\n\nAn unsaved parent draft.')
+        p.locator('#more').click();p.locator('#new-subpage').click()
+        expect(p.locator('#modal-body')).to_contain_text('Create under “Home”')
+        p.get_by_label('Subpage name').fill('Scratch notes')
+        p.get_by_role('button',name='Create page',exact=True).click()
+        expect(p.locator('#page-title')).to_have_text('Scratch notes')
+        self.assertEqual(self.store.read('Home'),original)
+        p.locator('#breadcrumb').get_by_role('link',name='Home',exact=True).click()
+        expect(p.locator('#source')).to_have_value('# My new title\n\nAn unsaved parent draft.')
+        expect(p.locator('#notice')).to_contain_text('Recovered')
+        self.assertEqual(self.store.read('Home'),original)
+
     def test_full_wiki_workflow(self):
         p=self.page
         # Tree and nested example pages.

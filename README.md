@@ -105,6 +105,8 @@ Docker deployments can set `HOMEWIKI_ALLOWED_HOSTS` to the permitted IP/hostname
 
 The sidebar toolbar contains New page (pencil), Recently edited (clock), Search (magnifying glass), and the sidebar toggle. Only top-level page groups have collapse arrows; their nested pages stay expanded when the group is open. Drag a page or group above/below a sibling to set its order, or focus it and press Alt+↑/↓. Ordering is saved on the server for all browsers and never changes page paths. New pages appear after ordered siblings; deleted entries are ignored.
 
+Use the upper-right **••• → New subpage** menu to create a child of the current page. Enter its name; Homewiki adds the parent path automatically. Unsaved work on the parent stays in its browser draft.
+
 A leading `# Heading` supplies the visible page title and browser-tab title. Editing it updates the rendered title after saving. The heading is shown once at the top, rather than duplicated in the article. Without a leading H1, the filename supplies the page title and Markdown headings render in the article. Page paths, sidebar labels, and internal links continue to use the filename; use Rename / move to change them.
 
 Create nested pages with paths such as `Games/Completed games`. A folder may also have its own page: `Games.md` beside `Games/Completed games.md`.
