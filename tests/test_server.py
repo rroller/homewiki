@@ -54,6 +54,99 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(results.count(200),1)
         self.assertEqual(results.count(409),5)
 
+    def test_history_saves_compares_restores_and_persists(self):
+        first=self.store.save('Notes/Example', '# First\nOne\n')
+        self.assertEqual(self.store.history(first['path'])['versions'],[])
+        second=self.store.save(first['path'], '# Second\nTwo\n', first['revision'])
+        versions=self.store.history(first['path'])['versions']
+        self.assertEqual(len(versions),1)
+        original=self.store.read_version(first['path'],versions[0]['id'])
+        self.assertEqual(original['content'],first['content'])
+        self.assertEqual(original['modified'],first['modified'])
+        self.assertEqual(app.Store(self.temp.name).read_version(first['path'],original['id']),original)
+        comparison=self.store.compare_version(first['path'],original['id'])
+        self.assertIn('-One',comparison['diff']);self.assertIn('+Two',comparison['diff'])
+        # An unchanged save creates no duplicate history entry or edit date.
+        self.assertEqual(self.store.save(second['path'],second['content'],second['revision']),second)
+        self.assertEqual(len(self.store.history(first['path'])['versions']),1)
+        restored=self.store.restore_version(first['path'],original['id'],second['revision'])
+        self.assertEqual(restored['content'],first['content'])
+        versions=self.store.history(first['path'])['versions']
+        self.assertEqual(len(versions),2)
+        self.assertEqual(self.store.read_version(first['path'],versions[0]['id'])['content'],second['content'])
+        self.store.restore_version(first['path'],original['id'],restored['revision'])
+        self.assertEqual(len(self.store.history(first['path'])['versions']),2)
+
+    def test_history_follows_rename_and_trash_and_keeps_external_content(self):
+        first=self.store.save('Old','# First')
+        second=self.store.save('Old','# Second',first['revision'])
+        self.store.path('Old').write_text('# External',encoding='utf-8')
+        external=self.store.read('Old')
+        latest=self.store.save('Old','# Latest',external['revision'])
+        moved=self.store.rename('Old','Folder/New',latest['revision'])
+        versions=self.store.history(moved['path'])['versions']
+        self.assertEqual([self.store.read_version(moved['path'],v['id'])['content'] for v in versions],['# External','# First'])
+        deleted=self.store.delete(moved['path'],moved['revision'])
+        restored=self.store.restore(deleted['id'])
+        versions=app.Store(self.temp.name).history(restored['path'])['versions']
+        self.assertEqual(len(versions),3)
+        self.assertEqual(self.store.read_version(restored['path'],versions[0]['id'])['content'],'# Latest')
+        self.assertEqual(self.store.listing('First'),[])
+
+    def test_history_conflicts_and_concurrent_restores(self):
+        first=self.store.save('Note','one')
+        current=self.store.save('Note','two',first['revision'])
+        token=self.store.history('Note')['versions'][0]['id']
+        with self.assertRaises(app.Problem) as caught:self.store.restore_version('Note',token,first['revision'])
+        self.assertEqual(caught.exception.status,409)
+        def restore(i):
+            try:self.store.restore_version('Note',token,current['revision']);return 200
+            except app.Problem as error:return error.status
+        with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+            results=list(pool.map(restore,range(6)))
+        self.assertEqual(results.count(200),1);self.assertEqual(results.count(409),5)
+        self.assertEqual(self.store.read('Note')['content'],'one')
+        self.assertEqual(len(self.store.history('Note')['versions']),2)
+
+    def test_history_paths_symlinks_and_damaged_snapshots(self):
+        first=self.store.save('Note','one')
+        current=self.store.save('Note','two',first['revision'])
+        token=self.store.history('Note')['versions'][0]['id']
+        for bad in ['../escape','x',None,'A'*32]:
+            with self.assertRaises(app.Problem):self.store.read_version('Note',bad)
+        with self.assertRaises(app.Problem):self.store.history('../escape')
+        item=self.store.history_item('Note',token)
+        snapshot=item/'page.md'
+        snapshot.write_text('tampered')
+        with self.assertRaises(app.Problem) as caught:self.store.restore_version('Note',token,current['revision'])
+        self.assertEqual(caught.exception.status,500)
+        self.assertEqual(self.store.read('Note'),current)
+        snapshot.unlink();snapshot.symlink_to(self.store.path('Note'))
+        with self.assertRaises(app.Problem):self.store.read_version('Note',token)
+        snapshot.unlink();snapshot.write_text('one')
+        metadata=item/'metadata.json';original_metadata=metadata.read_text()
+        metadata.write_text('{')
+        with self.assertRaises(app.Problem) as caught:self.store.history('Note')
+        self.assertEqual(caught.exception.status,500)
+        metadata.write_text(original_metadata)
+        directory=self.store.history_dir('Note')
+        destination=Path(self.temp.name)/'outside-history'
+        directory.rename(destination);directory.symlink_to(destination,target_is_directory=True)
+        with self.assertRaises(app.Problem):self.store.history('Note')
+
+    def test_history_write_failure_prevents_page_overwrite(self):
+        from unittest.mock import patch
+        first=self.store.save('Note','one')
+        atomic=self.store.atomic
+        def fail_history(path,content):
+            if self.store.history_root in path.parents:raise OSError('Storage full')
+            return atomic(path,content)
+        with patch.object(self.store,'atomic',side_effect=fail_history):
+            with self.assertRaises(OSError):self.store.save('Note','two',first['revision'])
+        self.assertEqual(self.store.read('Note'),first)
+        self.assertEqual(self.store.history('Note')['versions'],[])
+        self.assertEqual(list(self.store.history_dir('Note').iterdir()),[])
+
     def test_crud_search_and_restart(self):
         page = self.store.save('Games/Completed games', '# Finished\nCafé and Zelda')
         self.assertEqual(Path(self.temp.name, 'pages/Games/Completed games.md').read_text(), page['content'])
@@ -234,6 +327,30 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(json.loads(raw)['parents'][''],roots)
         self.assertEqual(self.request('/api/order',body,headers)[0],409)
         self.assertEqual(json.loads(self.request('/api/order')[1]),json.loads(raw))
+
+    def test_history_endpoints_and_private_guards(self):
+        first=self.server.store.save('History HTTP/Example','# Original')
+        current=self.server.store.save(first['path'],'# Current',first['revision'])
+        query='?path=History%20HTTP%2FExample'
+        status,raw,_=self.request('/api/history'+query)
+        self.assertEqual(status,200)
+        result=json.loads(raw);token=result['versions'][0]['id']
+        self.assertEqual(result['current']['content'],'# Current')
+        status,raw,_=self.request('/api/history-version'+query+'&version='+token)
+        self.assertEqual(status,200)
+        self.assertEqual(json.loads(raw)['version']['content'],'# Original')
+        body={'path':first['path'],'version':token,'revision':current['revision']}
+        self.assertEqual(self.request('/api/history-restore',body)[0],403)
+        headers={'Content-Type':'application/json','X-Homewiki':'1'}
+        self.assertEqual(self.request('/api/history-restore',body,{**headers,'Origin':'https://attacker.example'})[0],403)
+        status,raw,_=self.request('/api/history-restore',body,headers)
+        self.assertEqual(status,200);self.assertEqual(json.loads(raw)['content'],'# Original')
+        self.assertEqual(self.request('/api/history-restore',body,headers)[0],409)
+        self.assertEqual(self.request('/api/history?path=../secret')[0],400)
+        self.assertEqual(self.request('/api/history?path=Missing%20history')[0],404)
+        self.assertEqual(self.request('/api/history-version'+query+'&version=../secret')[0],400)
+        self.assertEqual(self.request('/api/history-version'+query+'&version='+'0'*32)[0],404)
+        self.assertEqual(self.request('/.history/'+token+'/page.md')[0],400)
 
     def test_bad_payload(self):
         self.assertEqual(self.request('/api/save',[],{'Content-Type':'application/json','X-Homewiki':'1'})[0],400)
