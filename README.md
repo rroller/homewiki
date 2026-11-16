@@ -6,20 +6,32 @@ After looking for years, I couldn't find a simple wiki for home internal use tha
 
 Homewiki is a lightweight, locally hosted personal wiki. Wiki pages are ordinary UTF-8 Markdown files in nested folders. The bookmark library uses SQLite. There is no build step or third-party runtime dependency.
 
+- Collapsible sidebar, light/dark themes, and clean page URLs with clickable breadcrumbs.
+- Markdown pages with nested folders, drag-and-drop sidebar ordering, internal links, search, and image uploads.
+- Browser editor with preview, draft recovery, edit conflicts, page history, and version restore.
+- Sortable tables, nested lists, clickable breadcrumbs, and a Recently edited index.
+- A bookmark library with editable descriptions, tags, original bookmark dates, and browsing by tag or domain.
+- Page titles fill in while adding a URL and remain editable. Page-text saving is enabled by default for new bookmarks, with full-text search across saved text and bookmark details.
+- Recoverable deleted wiki pages; bookmark deletion is permanent.
+- Docker Compose and Unraid support with persistent storage.
+
+## Screenshots
+
+Example content in the current interface. Images follow your light or dark theme.
+
+### Wiki
+
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/images/homewiki-dark.png">
-  <img src="docs/images/homewiki-light.png" alt="Homewiki example with a nested page sidebar, linked collections, a sortable table, and a task list" width="1440">
+  <img src="docs/images/homewiki-light.png" alt="Homewiki wiki page with a nested sidebar, linked collections, a sortable table, and task lists" width="1440">
 </picture>
 
-A sample wiki with nested pages, internal links, sortable tables, and task lists. The screenshot follows your light or dark theme.
+### Bookmarks
 
-- Collapsible sidebar, light/dark themes, and clean page URLs with clickable breadcrumbs.
-- Create, edit, rename/move, and delete pages in the browser.
-- Markdown editor with preview, internal wiki links, a page-link picker, full-text search, and image uploads by drop, paste, or file picker.
-- Browser draft recovery, revision-based conflict detection, and a manual merge view.
-- Bookmark library with tags, domain browsing, editable descriptions, and optional page-text search.
-- Page history with comparisons and restore, recoverable deleted pages, last-edit dates, and a Recently edited index.
-- Docker Compose and an optional Unraid deployment script with persistent storage.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/bookmarks-dark.png">
+  <img src="docs/images/bookmarks-light.png" alt="Homewiki bookmark library with saved page titles, descriptions, tags, domain links, original save dates, and full-text search" width="1440">
+</picture>
 
 ## Run on Unraid
 
