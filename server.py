@@ -2,6 +2,7 @@
 """Homewiki: a private, file-backed wiki. No third-party dependencies."""
 import argparse
 import contextlib
+import difflib
 import fcntl
 import hashlib
 import json
@@ -33,7 +34,8 @@ class Store:
         self.pages = self.root / 'pages'
         self.trash = self.root / '.trash'
         self.uploads = self.root / 'uploads'
-        for p in (self.pages, self.trash, self.uploads):
+        self.history_root = self.root / '.history'
+        for p in (self.pages, self.trash, self.uploads, self.history_root):
             if p.is_symlink():
                 raise ValueError('Storage directories cannot be symlinks')
             p.mkdir(mode=0o700, exist_ok=True)
@@ -177,13 +179,126 @@ class Store:
             if os.path.exists(tmp):
                 os.unlink(tmp)
 
+    def history_dir(self, name):
+        self.path(name)
+        directory = self.history_root / hashlib.sha256(name.encode()).hexdigest()
+        if self.history_root.is_symlink() or directory.is_symlink():
+            raise Problem(400, 'Symlinks are not supported')
+        return directory
+
+    def history_item(self, name, token):
+        if not isinstance(token, str) or not re.fullmatch(r'[0-9a-f]{32}', token):
+            raise Problem(400, 'Invalid version ID')
+        item = self.history_dir(name) / token
+        if item.is_symlink() or any((item / file).is_symlink() for file in ('page.md', 'metadata.json')):
+            raise Problem(400, 'Symlinks are not supported')
+        return item
+
+    def history_metadata(self, item):
+        try:
+            info = json.loads((item / 'metadata.json').read_text(encoding='utf-8'))
+        except (ValueError, UnicodeError):
+            raise Problem(500, 'Page history metadata is invalid. Check the data folder backup.')
+        if (not isinstance(info, dict) or info.get('id') != item.name
+                or not isinstance(info.get('revision'), str) or not re.fullmatch(r'[0-9a-f]{64}', info['revision'])
+                or any(not isinstance(info.get(key), str) for key in ('path', 'modified', 'recorded'))
+                or not isinstance(info.get('bytes'), int)):
+            raise Problem(500, 'Page history metadata is invalid. Check the data folder backup.')
+        return info
+
+    def archive(self, page):
+        # Publish both files together before allowing the current page to change.
+        directory = self.history_dir(page['path'])
+        directory.mkdir(mode=0o700, exist_ok=True)
+        token = uuid.uuid4().hex
+        pending = directory / ('.pending-' + token)
+        pending.mkdir(mode=0o700)
+        try:
+            self.atomic(pending / 'page.md', page['content'])
+            info = {key: page[key] for key in ('path', 'revision', 'modified')}
+            info.update(id=token, recorded=datetime.now(timezone.utc).isoformat(), bytes=len(page['content'].encode()))
+            self.atomic(pending / 'metadata.json', json.dumps(info, ensure_ascii=False))
+            pending.rename(directory / token)
+        finally:
+            if pending.exists():
+                shutil.rmtree(pending)
+
+    def history(self, name):
+        with self.locked():
+            current = self.read(name)
+            directory = self.history_dir(name)
+            versions = []
+            if directory.exists():
+                for child in directory.iterdir():
+                    if re.fullmatch(r'[0-9a-f]{32}', child.name):
+                        item = self.history_item(name, child.name)
+                        versions.append(self.history_metadata(item))
+            return {'current': current, 'versions': sorted(versions, key=lambda item: (item['recorded'], item['id']), reverse=True)}
+
+    def read_version(self, name, token):
+        item = self.history_item(name, token)
+        info = self.history_metadata(item)
+        content = (item / 'page.md').read_bytes().decode('utf-8')
+        if hashlib.sha256(content.encode()).hexdigest() != info['revision']:
+            raise Problem(500, 'This saved version is damaged. Check the data folder backup.')
+        return {**info, 'content': content}
+
+    def compare_version(self, name, token):
+        with self.locked():
+            current = self.read(name)
+            version = self.read_version(name, token)
+        # Comparing large pages should not hold the mutation lock.
+        diff = list(difflib.unified_diff(version['content'].splitlines(), current['content'].splitlines(),
+                    fromfile='Selected version', tofile='Current page', lineterm=''))
+        return {'current': current, 'version': version, 'diff': diff}
+
+    def restore_version(self, name, token, revision):
+        with self.locked():
+            current = self.check(name, revision)
+            version = self.read_version(name, token)
+            if version['revision'] == current['revision']:
+                return current
+            if len(version['content'].encode()) > MAX_BODY - 4096:
+                raise Problem(400, 'This saved version is too large to restore through Homewiki.')
+            self.archive(current)
+            self.atomic(self.path(name), version['content'])
+            return self.read(name)
+
+    def copy_history(self, name, target):
+        source, destination = self.history_dir(name), self.history_dir(target)
+        if not source.exists():
+            return
+        for entry in source.iterdir():
+            if not re.fullmatch(r'[0-9a-f]{32}', entry.name):
+                continue
+            # Verify snapshots before copying, and retain originals if a move fails.
+            version = self.read_version(name, entry.name)
+            item = self.history_item(target, entry.name)
+            if item.exists():
+                if self.read_version(target, entry.name)['revision'] != version['revision']:
+                    raise Problem(500, 'A saved version conflicts at the destination.')
+                continue
+            destination.mkdir(mode=0o700, exist_ok=True)
+            pending = destination / ('.pending-' + uuid.uuid4().hex)
+            try:
+                pending.mkdir(mode=0o700)
+                self.atomic(pending / 'page.md', version['content'])
+                self.atomic(pending / 'metadata.json', json.dumps({key: value for key, value in version.items() if key != 'content'}, ensure_ascii=False))
+                pending.rename(item)
+            finally:
+                if pending.exists():
+                    shutil.rmtree(pending)
+
     def save(self, name, content, revision=None):
         path = self.path(name)
         if not isinstance(content, str) or len(content.encode()) > MAX_BODY - 4096:
             raise Problem(400, 'Page is too large or content is invalid')
         with self.locked():
             if path.exists():
-                self.check(name, revision)
+                current = self.check(name, revision)
+                if current['content'] == content:
+                    return current
+                self.archive(current)
             elif revision is not None:
                 raise Problem(409, 'This page was moved or deleted. Your draft is safe.')
             self.atomic(path, content)
@@ -198,6 +313,7 @@ class Store:
                 return self.read(name)
             if dst.exists():
                 raise Problem(409, 'A page already exists at that path')
+            self.copy_history(name, target)
             dst.parent.mkdir(parents=True, exist_ok=True)
             src.rename(dst)
             return self.read(target)
@@ -205,7 +321,8 @@ class Store:
     def delete(self, name, revision):
         path = self.path(name)
         with self.locked():
-            self.check(name, revision)
+            current = self.check(name, revision)
+            self.archive(current)
             token = uuid.uuid4().hex
             item = self.trash / token
             item.mkdir()
@@ -293,6 +410,10 @@ class Handler(BaseHTTPRequestHandler):
                     raw, kind = store.read_image(url.path[len('/uploads/'):])
                     self.reply(200, raw, kind)
                     return
+                elif url.path == '/api/history':
+                    data = store.history(args.get('path', [''])[0])
+                elif url.path == '/api/history-version':
+                    data = store.compare_version(args.get('path', [''])[0], args.get('version', [''])[0])
                 elif url.path == '/api/order':
                     data = store.page_order()
                 elif url.path == '/api/trash':
@@ -336,6 +457,8 @@ class Handler(BaseHTTPRequestHandler):
                 name, revision = body.get('path'), body.get('revision')
                 if url.path == '/api/save':
                     data = store.save(name, body.get('content'), revision)
+                elif url.path == '/api/history-restore':
+                    data = store.restore_version(name, body.get('version'), revision)
                 elif url.path == '/api/order':
                     data = store.reorder_pages(body.get('parent'), body.get('children'), revision)
                 elif url.path == '/api/rename':

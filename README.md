@@ -17,7 +17,7 @@ A sample wiki with nested pages, internal links, sortable tables, and task lists
 - Create, edit, rename/move, and delete pages in the browser.
 - Markdown editor with preview, internal wiki links, a page-link picker, full-text search, and image uploads by drop, paste, or file picker.
 - Browser draft recovery, revision-based conflict detection, and a manual merge view.
-- Recoverable deleted pages, last-edit dates, and a Recently edited index.
+- Page history with comparisons and restore, recoverable deleted pages, last-edit dates, and a Recently edited index.
 - Docker Compose and an optional Unraid deployment script with persistent storage.
 
 ## Run on Unraid
@@ -152,6 +152,16 @@ Indent child items with spaces or tabs. Two- and four-space bullet lists work, a
   - [x] Finish the first chapter
 ```
 
+## Page history
+
+Open **••• → Page history** to browse earlier saved versions. Choose a version to see a highlighted comparison against the current page, or switch to **Saved Markdown** to read its full source. Minus lines belong to the selected version; plus lines belong to the current page.
+
+**Restore this version** asks for confirmation, then makes the selected content current. The content it replaces is kept in history, so you can undo a restore. A newer edit blocks a stale restore. Save or discard a local draft before restoring; browsing history preserves it.
+
+Homewiki snapshots the current Markdown before each changed save, restore, or deletion. Existing pages get their first earlier version when next changed; unchanged saves do not add entries. Renames copy history to the new path, and recovering a page from trash keeps its history. Versions belong to page paths, so reusing an old path also makes its earlier versions available.
+
+History uses Markdown snapshots and JSON metadata under the persistent data folder's hidden .history directory. It has no automatic expiry; include it in backups and allow space for saved versions. File edits made outside Homewiki are captured only when their current content is subsequently changed or deleted through Homewiki. Intermediate external edits cannot be reconstructed.
+
 ## Storage and durability
 
 ```text
@@ -164,6 +174,9 @@ data/
   uploads/
     <unique-id>.png
   .trash/<unique-id>/
+    page.md
+    metadata.json
+  .history/<page-path-hash>/<version-id>/
     page.md
     metadata.json
   .sidebar-order.json   Shared manual sidebar ordering
@@ -179,7 +192,7 @@ Saves flush a temporary file and atomically replace the page. A cross-process ad
 
 Unsaved edits go immediately into localStorage with separate keys for tabs. Revisiting a page or reloading recovers a draft. If browser storage fails, the editor warns and prompts before leaving with unsaved work. Browser drafts belong to the origin, including its port; clearing site data removes them. They are not server backups.
 
-Back up the complete server-side data folder, including `.trash` and hidden files, with edits paused or the app stopped. For Docker, back up the volume or bind mount and preserve ownership (UID/GID 10001). Keep data when replacing the container. A volume copy while the container is running but edits are paused can be made to a fresh destination with:
+Back up the complete server-side data folder, including `.trash`, `.history`, and hidden files, with edits paused or the app stopped. For Docker, back up the volume or bind mount and preserve ownership (UID/GID 10001). Keep data when replacing the container. A volume copy while the container is running but edits are paused can be made to a fresh destination with:
 
 ```sh
 docker compose cp homewiki:/data ./homewiki-backup
@@ -203,4 +216,4 @@ python -m playwright install --with-deps chromium
 python -m unittest discover -s tests -v
 ```
 
-The suite covers file storage and CRUD, destination protection, external and concurrent edits, path safety, private request guards, direct page routes, persistent sidebar drag/keyboard ordering and conflicts, editor/preview/link/search flows, draft recovery, conflict merging, trash/restore, themes, mobile layout, safe Markdown rendering, edit dates, recent-page ordering, image drop/paste/picker flows, upload failures and interruption, navigation during upload, and image persistence. Tests do not edit your real wiki.
+The suite covers file storage and CRUD, destination protection, external and concurrent edits, path safety, private request guards, direct page routes, persistent sidebar drag/keyboard ordering and conflicts, editor/preview/link/search flows, draft recovery, conflict merging, page history and safe version restore, trash/restore, themes, mobile layout, safe Markdown rendering, edit dates, recent-page ordering, image drop/paste/picker flows, upload failures and interruption, navigation during upload, and image persistence. Tests do not edit your real wiki.

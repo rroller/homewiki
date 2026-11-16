@@ -63,10 +63,13 @@ data/
   pages/       Markdown pages in nested folders
   uploads/     Dropped, pasted, and selected images
   .trash/      Recoverable deleted pages
+  .history/    Saved page versions and metadata
   .sidebar-order.json  Shared sidebar ordering
   .initialized
   .lock
 ```
+
+Page history is available under **••• → Page history**. Saved versions live in .history within the same data mapping; no additional mount or configuration is needed.
 
 Keep this entire folder when updating or recreating the container. Pages, uploaded images, and backups do not belong in the Git repository.
 

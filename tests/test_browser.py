@@ -142,6 +142,82 @@ class BrowserTests(unittest.TestCase):
         expect(p.locator('#notice')).to_contain_text('Recovered')
         self.assertEqual(self.store.read('Home'),original)
 
+    def open_history(self):
+        self.page.locator('#more').click()
+        self.page.get_by_role('button',name='Page history',exact=True).click()
+        expect(self.page.locator('#modal-title')).to_have_text('Page history')
+
+    def test_history_compare_and_restore_workflow(self):
+        p=self.page
+        first=self.store.save('History/Nested','# First\nOriginal text\n')
+        second=self.store.save(first['path'],'# Second\n<script>window.historyInjected=true</script>\n',first['revision'])
+        latest=self.store.save(first['path'],'# Third\nCurrent text\n',second['revision'])
+        versions=self.store.history(first['path'])['versions']
+        p.goto(self.url+'/History/Nested');expect(p.locator('#page-title')).to_have_text('Third')
+        self.open_history()
+        expect(p.locator('#history-version option')).to_have_count(2)
+        expect(p.locator('#history-diff .diff-removed')).to_contain_text(['-# Second','-<script>'])
+        expect(p.locator('#history-diff .diff-added')).to_contain_text(['+# Third','+Current text'])
+        self.assertFalse(p.evaluate('Boolean(window.historyInjected)'))
+        self.assertEqual(p.locator('#modal script').count(),0)
+        p.get_by_role('tab',name='Saved Markdown',exact=True).click()
+        expect(p.locator('#history-content')).to_have_text(second['content'])
+        p.get_by_role('tab',name='Changes',exact=True).click()
+        original=next(version for version in versions if version['revision']==first['revision'])
+        p.locator('#history-version').select_option(original['id'])
+        expect(p.locator('#history-diff .diff-removed')).to_contain_text(['-# First','-Original text'])
+        p.locator('#history-restore').click()
+        expect(p.locator('#modal-title')).to_have_text('Restore this version?')
+        p.get_by_role('button',name='Cancel',exact=True).click()
+        expect(p.locator('#modal-title')).to_have_text('Page history')
+        self.assertEqual(self.store.read(first['path']),latest)
+        p.locator('#history-version').select_option(original['id'])
+        expect(p.locator('#history-diff .diff-removed').first).to_have_text('-# First')
+        p.locator('#history-restore').click();p.locator('#confirm-history-restore').click()
+        expect(p.locator('#modal')).not_to_be_visible()
+        expect(p.locator('#page-title')).to_have_text('First')
+        self.assertEqual(self.store.read(first['path'])['content'],first['content'])
+        self.assertEqual(len(self.store.history(first['path'])['versions']),3)
+        p.reload();expect(p.locator('#page-title')).to_have_text('First')
+        self.open_history()
+        expect(p.locator('#history-version option')).to_have_count(3)
+        expect(p.locator('#history-content')).to_have_text(latest['content'])
+
+    def test_history_empty_state_and_parent_draft_protection(self):
+        p=self.page
+        self.open_history()
+        expect(p.locator('#modal')).to_contain_text('No earlier versions yet')
+        p.locator('#modal-close').click()
+        before=self.store.read('Home')
+        saved=self.store.save('Home','# Saved version',before['revision'])
+        p.reload();expect(p.locator('#page-title')).to_have_text('Saved version')
+        p.locator('#edit-page').click();p.locator('#source').fill('# Unsaved draft')
+        self.open_history();expect(p.locator('#history-restore')).to_be_enabled()
+        p.locator('#history-restore').click()
+        expect(p.locator('#modal .error-text')).to_contain_text('Save or discard your draft')
+        expect(p.locator('#modal-title')).to_have_text('Page history')
+        p.locator('#modal-close').click()
+        expect(p.locator('#source')).to_have_value('# Unsaved draft')
+        self.assertEqual(self.store.read('Home'),saved)
+        p.reload();expect(p.locator('#source')).to_have_value('# Unsaved draft')
+
+    def test_history_restore_detects_newer_edits(self):
+        p=self.page
+        before=self.store.read('Home')
+        saved=self.store.save('Home','# New saved version',before['revision'])
+        p.reload();expect(p.locator('#page-title')).to_have_text('New saved version')
+        self.open_history();expect(p.locator('#history-restore')).to_be_enabled()
+        p.locator('#history-restore').click()
+        expect(p.locator('#confirm-history-restore')).to_be_visible()
+        external=self.store.save('Home','# Other browser edit',saved['revision'])
+        p.locator('#confirm-history-restore').click()
+        expect(p.locator('#modal .error-text')).to_contain_text('changed on disk')
+        self.assertEqual(self.store.read('Home'),external)
+        expect(p.locator('#confirm-history-restore')).to_be_enabled()
+        p.get_by_role('button',name='Cancel',exact=True).click()
+        expect(p.locator('#history-version option')).to_have_count(2)
+        expect(p.locator('#history-content')).to_have_text(saved['content'])
+
     def test_full_wiki_workflow(self):
         p=self.page
         # Tree and nested example pages.
@@ -582,7 +658,9 @@ After the table.
         expect(p.locator('#page-title')).to_have_text('Recently edited')
         expect(p).to_have_url(self.url+'/recently-edited')
         source='[New root](/Games/Completed%20games) [Old root](/page/Games/Completed%20games) [[Home]]'
-        p.locator('#content').evaluate('(node,source)=>node.innerHTML=markdown(source)',source)
+        self.store.save('Root link check','# Root link check\n\n'+source)
+        p.goto(self.url+'/Root%20link%20check')
+        expect(p.locator('#page-title')).to_have_text('Root link check')
         self.assertEqual(p.locator('#content a').evaluate_all('links=>links.map(a=>a.getAttribute("href"))'),['/Games/Completed%20games','/Games/Completed%20games','/Home'])
         p.locator('#content a').first.click()
         expect(p).to_have_url(self.url+'/Games/Completed%20games')

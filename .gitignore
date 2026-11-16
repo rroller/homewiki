@@ -12,6 +12,7 @@ pages/
 uploads/
 attachments/
 .trash/
+.history/
 backups/
 backup/
 .initialized

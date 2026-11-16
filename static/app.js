@@ -507,6 +507,93 @@ $('delete-page').onclick=()=>{
   $('actions').hidden=true;if(!requireClean())return;const page=state.page;const body=modal('Move page to trash?');const p=document.createElement('p');p.textContent='“'+page.path+'” will be recoverable from Recently deleted. Nested pages remain in place.';body.append(p);
   const row=document.createElement('div');row.className='dialog-buttons';row.innerHTML='<button class="subtle-button">Cancel</button><button class="primary-button">Move to trash</button>';body.append(row);row.children[0].onclick=closeModal;row.children[1].onclick=async()=>{row.children[1].disabled=true;try{await api('delete',{path:page.path,revision:page.revision});await refreshPages();closeModal();go(state.pages.find(p=>p.path==='Home')?.path||state.pages[0]?.path||'Home');toast('Page moved to trash');}catch(error){errorInto(body,error);row.children[1].disabled=false;}};
 };
+function historyDialog(){
+  const path=state.page?.path;if(!path||state.loading)return;
+  preserveDraft();
+  const body=modal('Page history');
+  const view=document.createElement('div');view.className='history-view';body.append(view);
+  const intro=document.createElement('p');intro.textContent='Saved versions of '+path+'. Current content is kept in history when you restore an earlier version.';view.append(intro);
+  const loading=document.createElement('p');loading.textContent='Loading versions…';view.append(loading);
+  const active=()=>view.isConnected&&$('modal').open;
+  const versionDate=value=>new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'medium'});
+  api('history?path='+encodeURIComponent(path)).then(result=>{
+    if(!active())return;
+    loading.remove();
+    if(!result.versions.length){
+      const empty=document.createElement('p');empty.className='empty';empty.textContent='No earlier versions yet. The current page will be kept when you save a change.';view.append(empty);return;
+    }
+    const label=document.createElement('label');label.htmlFor='history-version';label.textContent='Saved version';
+    const select=document.createElement('select');select.id='history-version';
+    result.versions.forEach((version,index)=>{
+      const option=document.createElement('option');option.value=version.id;
+      option.textContent=versionDate(version.modified)+' · '+version.bytes.toLocaleString()+' bytes'+(index===0?' · most recent':'');
+      select.append(option);
+    });
+    const current=document.createElement('p');current.className='history-current';
+    const tabs=document.createElement('div');tabs.className='history-tabs';tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Version comparison');
+    const changes=document.createElement('button');changes.type='button';changes.id='history-changes-tab';changes.textContent='Changes';
+    const source=document.createElement('button');source.type='button';source.id='history-source-tab';source.textContent='Saved Markdown';
+    for(const tab of [changes,source]){tab.setAttribute('role','tab');tabs.append(tab);}
+    changes.setAttribute('aria-controls','history-diff');source.setAttribute('aria-controls','history-content');
+    const legend=document.createElement('p');legend.className='history-legend';legend.textContent='− Selected version · + Current page';
+    const diff=document.createElement('pre');diff.id='history-diff';diff.className='history-code';diff.setAttribute('role','tabpanel');diff.setAttribute('aria-labelledby',changes.id);diff.tabIndex=0;
+    const content=document.createElement('pre');content.id='history-content';content.className='history-code';content.setAttribute('role','tabpanel');content.setAttribute('aria-labelledby',source.id);content.tabIndex=0;
+    const controls=document.createElement('div');controls.className='dialog-buttons';
+    const restore=document.createElement('button');restore.id='history-restore';restore.type='button';restore.className='primary-button';restore.textContent='Restore this version';restore.disabled=true;controls.append(restore);
+    const errorArea=document.createElement('div');
+    view.append(label,select,current,tabs,legend,diff,content,errorArea,controls);
+    function tab(showSource){
+      changes.setAttribute('aria-selected',String(!showSource));source.setAttribute('aria-selected',String(showSource));changes.tabIndex=showSource?-1:0;source.tabIndex=showSource?0:-1;
+      diff.hidden=showSource;legend.hidden=showSource;content.hidden=!showSource;
+    }
+    changes.onclick=()=>tab(false);source.onclick=()=>tab(true);
+    tabs.onkeydown=event=>{if(['ArrowLeft','ArrowRight','Home','End'].includes(event.key)){event.preventDefault();const target=event.key==='Home'?changes:event.key==='End'?source:event.target===changes?source:changes;target.click();target.focus();}};
+    tab(false);
+    let sequence=0,comparison=null;
+    async function loadVersion(){
+      const turn=++sequence;comparison=null;restore.disabled=true;errorArea.replaceChildren();diff.textContent='Loading comparison…';content.textContent='';
+      try{
+        const value=await api('history-version?path='+encodeURIComponent(path)+'&version='+select.value);
+        if(!active()||turn!==sequence)return;
+        comparison=value;current.textContent='Compared with current page · '+versionDate(value.current.modified);
+        content.textContent=value.version.content;diff.replaceChildren();
+        for(const line of value.diff){
+          const row=document.createElement('span');row.textContent=line+'\n';
+          row.className=line.startsWith('+++')||line.startsWith('---')?'diff-header':line.startsWith('+')?'diff-added':line.startsWith('-')?'diff-removed':line.startsWith('@@')?'diff-range':'';
+          diff.append(row);
+        }
+        if(!value.diff.length)diff.textContent=value.version.revision===value.current.revision?'This version matches the current page.':'Only line endings or the final newline differ. See Saved Markdown for the selected content.';
+        restore.disabled=value.version.revision===value.current.revision;
+      }catch(error){if(active()&&turn===sequence){diff.textContent='Unable to load this version.';errorInto(errorArea,error);}}
+    }
+    select.onchange=loadVersion;loadVersion();
+    restore.onclick=()=>{
+      if(!comparison)return;
+      preserveDraft();
+      if(state.page?.path!==path){toast('Open this page again before restoring a version.');return;}
+      if(state.dirty||draft(path)||uploadCount(path)){errorInto(errorArea,new Error('Save or discard your draft before restoring a version.'));return;}
+      const selected=comparison;
+      const confirmation=modal('Restore this version?');
+      const message=document.createElement('p');message.textContent='Restore '+path+' to the version from '+versionDate(selected.version.modified)+'? Its current saved content will remain in page history.';confirmation.append(message);
+      const row=document.createElement('div');row.className='dialog-buttons';
+      const cancel=document.createElement('button');cancel.className='subtle-button';cancel.textContent='Cancel';cancel.onclick=historyDialog;
+      const confirm=document.createElement('button');confirm.className='primary-button';confirm.id='confirm-history-restore';confirm.textContent='Restore version';
+      row.append(cancel,confirm);confirmation.append(row);
+      confirm.onclick=async()=>{
+        confirm.disabled=true;cancel.disabled=true;
+        try{
+          // Check again immediately before the write; other tabs retain their own drafts.
+          preserveDraft();
+          if(state.page?.path!==path||state.dirty||draft(path)||uploadCount(path))throw new Error('Save or discard your draft before restoring a version.');
+          await api('history-restore',{path,version:selected.version.id,revision:selected.current.revision});
+          closeModal();await navigate(path);await refreshPages();toast('Earlier version restored');
+        }catch(error){errorInto(confirmation,error);confirm.disabled=false;cancel.disabled=false;}
+      };
+    };
+  }).catch(error=>{if(active()){loading.remove();errorInto(view,error);}});
+}
+$('page-history').onclick=()=>{$('actions').hidden=true;$('more').setAttribute('aria-expanded','false');historyDialog();};
+
 function discardDialog(){const body=modal('Discard unsaved draft?');body.innerHTML='<p>This removes the browser draft. The saved Markdown file stays as it is.</p><div class="dialog-buttons"><button class="subtle-button">Keep draft</button><button class="primary-button">Discard draft</button></div>';const buttons=body.querySelectorAll('button');buttons[0].onclick=closeModal;buttons[1].onclick=()=>{removeDraft(state.page.path);state.editing=false;state.dirty=false;closeModal();navigate(state.page.path);};}
 async function compare(){
   const path=state.page?.path;if(!path)return;preserveDraft();const saved=draft(path);const local=state.editing?$('source').value:(saved?.content||'');const body=modal('Compare conflicting edits');
