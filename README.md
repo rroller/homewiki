@@ -29,7 +29,7 @@ Use the published `ghcr.io/rroller/homewiki:latest` image with the [Homewiki Unr
    | Wiki data | `/mnt/user/appdata/homewiki/data` → `/data`, read/write |
    | Allowed hosts | Your Unraid IP and any wiki hostname, comma-separated; no scheme or port |
 
-4. Click **Apply**, enable **Autostart** if desired, and open the container's **WebUI**. The default URL is `http://YOUR_UNRAID_IP:18080/page/Home`.
+4. Click **Apply**, enable **Autostart** if desired, and open the container's **WebUI**. The default URL is `http://YOUR_UNRAID_IP:18080/Home`.
 
 Keep the full `/data` mapping across updates: it contains pages, uploaded images, recoverable trash, and state. Use Unraid's **Check for Updates / Update** controls for new images; publishing to `:latest` does not automatically replace a running container. Back up the entire data folder with the app stopped. Homewiki has no built-in authentication, so keep access private or provide separate access controls.
 
@@ -92,7 +92,7 @@ Docker deployments can set `HOMEWIKI_ALLOWED_HOSTS` to the permitted IP/hostname
 
 ## Use the wiki
 
-The sidebar toolbar contains New page (pencil), Recently edited (clock), Search (magnifying glass), and the sidebar toggle. Only top-level page groups have collapse arrows; their nested pages stay expanded when the group is open.
+The sidebar toolbar contains New page (pencil), Recently edited (clock), Search (magnifying glass), and the sidebar toggle. Only top-level page groups have collapse arrows; their nested pages stay expanded when the group is open. Drag a page or group above/below a sibling to set its order, or focus it and press Alt+↑/↓. Ordering is saved on the server for all browsers and never changes page paths. New pages appear after ordered siblings; deleted entries are ignored.
 
 A leading `# Heading` supplies the visible page title and browser-tab title. Editing it updates the rendered title after saving. The heading is shown once at the top, rather than duplicated in the article. Without a leading H1, the filename supplies the page title and Markdown headings render in the article. Page paths, sidebar labels, and internal links continue to use the filename; use Rename / move to change them.
 
@@ -102,7 +102,7 @@ Use `[[Games/Completed games]]` or `[[Games/Completed games|Finished games]]` to
 
 Plain web addresses such as `https://example.com`, `www.example.com`, and `example.com` become clickable; bare domains use HTTPS. Standard `[label](https://example.com)` links and `<https://example.com>` autolinks also work. Code spans/blocks and email addresses remain text. Click the Homewiki name at the top of the sidebar to return Home.
 
-Page URLs use `/page/Home` or `/page/Games/Completed%20games`. Direct links, refresh, and browser back/forward work. Older `/#/page/...` links open at their equivalent clean URL. Breadcrumb ancestors link back to parent pages and Home.
+Page URLs use `/Home` or `/Games/Completed%20games`, with no `/page/` prefix. Direct links, refresh, and browser back/forward work. Older `/page/...` and `/#/page/...` links open at their equivalent clean URL. Application route names (`api`, `uploads`, `page`, `recently-edited`, and static asset names) are reserved; pages using those top-level names remain accessible through `/page/<path>` to avoid conflicts. Breadcrumb ancestors link back to parent pages and Home.
 
 Ctrl/Cmd+K opens search; Ctrl/Cmd+S saves an edit. Closing the editor retains its browser draft; Discard draft removes it. Rename/move changes only the selected Markdown file. Children and links to its old path remain unchanged, and existing destinations are never replaced.
 
@@ -153,6 +153,7 @@ data/
   .trash/<unique-id>/
     page.md
     metadata.json
+  .sidebar-order.json   Shared manual sidebar ordering
   .initialized
   .lock
 ```
@@ -189,4 +190,4 @@ python -m playwright install --with-deps chromium
 python -m unittest discover -s tests -v
 ```
 
-The suite covers file storage and CRUD, destination protection, external and concurrent edits, path safety, private request guards, direct page routes, editor/preview/link/search flows, draft recovery, conflict merging, trash/restore, themes, mobile layout, safe Markdown rendering, edit dates, recent-page ordering, image drop/paste/picker flows, upload failures and interruption, navigation during upload, and image persistence. Tests do not edit your real wiki.
+The suite covers file storage and CRUD, destination protection, external and concurrent edits, path safety, private request guards, direct page routes, persistent sidebar drag/keyboard ordering and conflicts, editor/preview/link/search flows, draft recovery, conflict merging, trash/restore, themes, mobile layout, safe Markdown rendering, edit dates, recent-page ordering, image drop/paste/picker flows, upload failures and interruption, navigation during upload, and image persistence. Tests do not edit your real wiki.

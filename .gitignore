@@ -16,6 +16,7 @@ backups/
 backup/
 .initialized
 .lock
+.sidebar-order.json
 image.txt
 before-*.json
 

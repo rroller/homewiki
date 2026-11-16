@@ -34,6 +34,52 @@ class BrowserTests(unittest.TestCase):
     def tearDown(self):
         self.context.close();self.server.shutdown();self.server.server_close();self.thread.join();self.temp.cleanup()
         self.assertEqual(self.errors,[])
+    def test_drag_sidebar_order_and_reload(self):
+        p=self.page
+        rows=p.locator('.tree-row[data-parent=""]')
+        def paths(locator):return locator.evaluate_all('(rows)=>rows.map(row=>row.dataset.path)')
+        original={item['path']:self.store.read(item['path']) for item in self.store.listing()}
+        self.assertEqual(paths(rows),['Games','Home','Reading list'])
+        with p.expect_response(lambda response:response.url.endswith('/api/order') and response.request.method=='POST') as response:
+            p.locator('.tree-row[data-path="Reading list"]').drag_to(p.locator('.tree-row[data-path="Games"]'),target_position={'x':60,'y':2})
+        self.assertEqual(response.value.status,200)
+        expect(p.locator('#toast')).to_have_text('Page order saved')
+        self.assertEqual(paths(rows),['Reading list','Games','Home'])
+        p.reload();expect(rows.first).to_have_attribute('data-path','Reading list')
+        self.assertEqual(paths(rows),['Reading list','Games','Home'])
+        children=p.locator('.tree-row[data-parent="Games"]')
+        with p.expect_response(lambda response:response.url.endswith('/api/order') and response.request.method=='POST') as response:
+            p.locator('.tree-row[data-path="Games/Games I own"]').drag_to(p.locator('.tree-row[data-path="Games/Completed games"]'),target_position={'x':80,'y':2})
+        self.assertEqual(response.value.status,200)
+        expect(children.first).to_have_attribute('data-path','Games/Games I own')
+        p.reload();expect(children.first).to_have_attribute('data-path','Games/Games I own')
+        revision=self.store.page_order()['revision']
+        # Moving over a different parent must not reparent, navigate or save.
+        p.locator('.tree-row[data-path="Home"]').drag_to(p.locator('.tree-row[data-path="Games/Games I own"]'))
+        self.assertEqual(self.store.page_order()['revision'],revision)
+        self.assertEqual(p.url,self.url+'/')
+        self.assertEqual({item['path']:self.store.read(item['path']) for item in self.store.listing()},original)
+        row_height=rows.first.bounding_box()['height']
+        self.assertLessEqual(row_height,34)
+
+    def test_sidebar_keyboard_order_and_conflict(self):
+        p=self.page
+        home=p.locator('.tree-row[data-path="Home"] a')
+        with p.expect_response(lambda response:response.url.endswith('/api/order') and response.request.method=='POST') as response:
+            home.focus();home.press('Alt+ArrowUp')
+        self.assertEqual(response.value.status,200)
+        expect(home).to_be_focused()
+        expect(p.locator('.tree-row[data-parent=""]').first).to_have_attribute('data-path','Home')
+        p.reload();expect(p.locator('.tree-row[data-parent=""]').first).to_have_attribute('data-path','Home')
+        # Another client saves while this browser has an older order revision.
+        self.store.reorder_pages('', ['Reading list','Games','Home'], self.store.page_order()['revision'])
+        with p.expect_response(lambda response:response.url.endswith('/api/order') and response.request.method=='POST') as response:
+            home.focus();home.press('Alt+ArrowDown')
+        self.assertEqual(response.value.status,409)
+        expect(p.locator('#toast')).to_contain_text('changed in another tab')
+        expect(p.locator('.tree-row[data-parent=""]').first).to_have_attribute('data-path','Reading list')
+        self.assertEqual(self.store.page_order()['parents'][''],['Reading list','Games','Home'])
+
     def test_full_wiki_workflow(self):
         p=self.page
         # Tree and nested example pages.
@@ -174,7 +220,7 @@ A paragraph after the lists.
         expect(preview.locator(':scope > ul > li').first.locator(':scope > ul > li')).to_have_count(2)
         expect(preview.locator('ul ul ul > li')).to_have_count(2)
         expect(preview.locator('ul ul ul strong')).to_have_text('Celeste')
-        expect(preview.locator('ul ul ul a')).to_have_attribute('href','/page/Home')
+        expect(preview.locator('ul ul ul a')).to_have_attribute('href','/Home')
         expect(preview.locator('ul ol')).to_have_attribute('start','3')
         expect(preview.locator(':scope > ol')).to_have_attribute('start','5')
         expect(preview.locator(':scope > ol > li').first.locator('ul > li')).to_have_text('Nested bullet')
@@ -233,7 +279,7 @@ A paragraph after the lists.
             ('Try https://example.com/path?q=1&x=2, then example.org/docs#heading.', ['https://example.com/path?q=1&x=2','https://example.org/docs#heading']),
             ('**https://example.com/bold**', ['https://example.com/bold']),
             ('HTTP://example.com:8080 and www.example.org/help', ['HTTP://example.com:8080','https://www.example.org/help']),
-            ('[example.com](https://www.example.com) [[Games]]', ['https://www.example.com','/page/Games']),
+            ('[example.com](https://www.example.com) [[Games]]', ['https://www.example.com','/Games']),
             ('\u0060https://example.com\u0060 name@example.com notes.md config.json /docs/example.com', []),
             ('javascript:example.com ftp://example.com https://example.com:99999', []),
             ('![example.com](https://example.com/tracker.png)', []),
@@ -254,9 +300,9 @@ A paragraph after the lists.
         p.locator('#tree').get_by_role('link',name='Games I own',exact=False).click()
         expect(p.locator('#page-title')).to_have_text('Games I own')
         p.locator('#edit-page').click();p.locator('#source').fill('# A draft to keep')
-        brand=p.locator('#brand-home');expect(brand).to_have_attribute('href','/page/Home')
+        brand=p.locator('#brand-home');expect(brand).to_have_attribute('href','/Home')
         brand.focus();p.keyboard.press('Enter')
-        expect(p).to_have_url(self.url+'/page/Home');expect(p.locator('#page-title')).to_have_text('A home for your thoughts')
+        expect(p).to_have_url(self.url+'/Home');expect(p.locator('#page-title')).to_have_text('A home for your thoughts')
         p.go_back();expect(p.locator('#source')).to_have_value('# A draft to keep')
         p.locator('#brand-home').click();expect(p.locator('#page-title')).to_have_text('A home for your thoughts')
 
@@ -432,6 +478,53 @@ After the table.
         for first,second in zip(boxes,boxes[1:]):
             self.assertGreaterEqual(second['y'],first['y']+first['height'])
             self.assertLessEqual(second['y']-first['y'],40)
+
+    def test_root_urls_direct_load_history_and_legacy_links(self):
+        p=self.page
+        self.store.save('Games/Owned','# Owned\n\n[[Games]]')
+        response=p.goto(self.url+'/Games/Owned')
+        self.assertEqual(response.status,200)
+        expect(p.locator('#page-title')).to_have_text('Owned')
+        expect(p).to_have_url(self.url+'/Games/Owned')
+        expect(p.locator('#tree a[aria-current=page]')).to_have_attribute('href','/Games/Owned')
+        p.reload();expect(p.locator('#page-title')).to_have_text('Owned')
+        p.locator('#breadcrumb').get_by_role('link',name='Games',exact=True).click()
+        expect(p).to_have_url(self.url+'/Games')
+        p.go_back();expect(p.locator('#page-title')).to_have_text('Owned')
+        p.go_forward();expect(p).to_have_url(self.url+'/Games')
+        p.goto(self.url+'/page/Games/Owned?view=wiki#section')
+        expect(p).to_have_url(self.url+'/Games/Owned?view=wiki#section')
+        expect(p.locator('#page-title')).to_have_text('Owned')
+        p.goto(self.url+'/#/page/Games%2FOwned')
+        expect(p).to_have_url(self.url+'/Games/Owned')
+        expect(p.locator('#page-title')).to_have_text('Owned')
+        p.locator('#content').get_by_role('link',name='Games',exact=True).click()
+        expect(p).to_have_url(self.url+'/Games')
+        p.locator('#brand-home').click();expect(p).to_have_url(self.url+'/Home')
+        # Names with spaces and literal percent signs round-trip cleanly.
+        self.store.save('Notes & ideas/100% done','# Done')
+        p.goto(self.url+'/Notes%20%26%20ideas/100%25%20done')
+        expect(p.locator('#page-title')).to_have_text('Done')
+        p.reload();expect(p.locator('#page-title')).to_have_text('Done')
+    def test_reserved_page_names_and_markdown_root_links(self):
+        p=self.page
+        self.store.save('api/Notes','# Reserved note')
+        self.store.save('recently-edited','# My recent note')
+        p.goto(self.url+'/page/api/Notes')
+        expect(p.locator('#page-title')).to_have_text('Reserved note')
+        expect(p).to_have_url(self.url+'/page/api/Notes')
+        p.reload();expect(p.locator('#page-title')).to_have_text('Reserved note')
+        p.goto(self.url+'/page/recently-edited')
+        expect(p.locator('#page-title')).to_have_text('My recent note')
+        p.locator('#recently-edited').click()
+        expect(p.locator('#page-title')).to_have_text('Recently edited')
+        expect(p).to_have_url(self.url+'/recently-edited')
+        source='[New root](/Games/Completed%20games) [Old root](/page/Games/Completed%20games) [[Home]]'
+        p.locator('#content').evaluate('(node,source)=>node.innerHTML=markdown(source)',source)
+        self.assertEqual(p.locator('#content a').evaluate_all('links=>links.map(a=>a.getAttribute("href"))'),['/Games/Completed%20games','/Games/Completed%20games','/Home'])
+        p.locator('#content a').first.click()
+        expect(p).to_have_url(self.url+'/Games/Completed%20games')
+        expect(p.locator('#page-title')).to_have_text('Completed games')
 
     def test_recent_edits_and_footer(self):
         p=self.page
