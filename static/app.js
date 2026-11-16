@@ -211,6 +211,7 @@ setTheme(stored('homewiki:theme')||(matchMedia('(prefers-color-scheme: dark)').m
 if(stored('homewiki:sidebar')==='hidden'||innerWidth<721)document.body.classList.add('sidebar-hidden');
 function sidebar(hidden){document.body.classList.toggle('sidebar-hidden',hidden);setStored('homewiki:sidebar',hidden?'hidden':'shown');}
 $('collapse').onclick=()=>sidebar(true);$('expand').onclick=()=>sidebar(false);
+$('sidebar-shade').onclick=()=>{sidebar(true);$('expand').focus({preventScroll:true});};
 $('theme-toggle').onclick=()=>setTheme(document.documentElement.dataset.theme==='dark'?'light':'dark');
 
 function renderTree(){
