@@ -1,6 +1,10 @@
 # Homewiki
 
-A lightweight, locally hosted personal wiki. Pages are ordinary UTF-8 Markdown files in nested folders, without a database, build step, or third-party runtime dependencies.
+After looking for years, I couldn't find a simple wiki for home internal use that I liked. So I used Codex to build one.
+
+**NOTE: this is meant for internal use only, do not expose this to the internet**
+
+Homewiki is a lightweight, locally hosted personal wiki. Pages are ordinary UTF-8 Markdown files in nested folders, without a database, build step, or third-party runtime dependencies.
 
 - Collapsible sidebar, light/dark themes, and clean page URLs with clickable breadcrumbs.
 - Create, edit, rename/move, and delete pages in the browser.
