@@ -481,12 +481,21 @@ function formDialog(title,description,value,submitLabel,callback){
   const form=document.createElement('form');form.innerHTML='<label for="page-path">Page path</label><input id="page-path" type="text" required maxlength="400" autocomplete="off"><div class="dialog-buttons"><button type="button" class="subtle-button">Cancel</button><button class="primary-button" type="submit">'+esc(submitLabel)+'</button></div>';body.append(form);const input=form.querySelector('input');input.value=value;form.querySelector('button').onclick=closeModal;
   form.onsubmit=async e=>{e.preventDefault();const button=form.querySelector('[type=submit]');button.disabled=true;try{await callback(input.value.trim());}catch(error){errorInto(body,error);}finally{button.disabled=false;}};input.focus();input.select();
 }
-function createDialog(initial=''){
-  formDialog('Create a page','Use / to nest pages. For example: Games/Completed games.',initial,'Create page',async path=>{
-    await api('save',{path,content:'# '+path.split('/').pop()+'\n\n',revision:null});await refreshPages();closeModal();go(path);
+function createDialog(initial='',parent=''){
+  formDialog(parent?'Create a subpage':'Create a page',parent?'Create under “'+parent+'”. Use / to nest further.':'Use / to nest pages. For example: Games/Completed games.',initial,'Create page',async name=>{
+    const path=parent?parent+'/'+name:name;
+    await api('save',{path,content:'# '+path.split('/').pop()+'\n\n',revision:null});
+    if(parent)setStored('homewiki:folder:'+parent.split('/')[0],'open');
+    await refreshPages();closeModal();go(path);
   });
+  if(parent){$('modal-body').querySelector('label').textContent='Subpage name';$('page-path').placeholder='New subpage';}
 }
 $('new-page').onclick=()=>createDialog();
+$('new-subpage').onclick=()=>{
+  $('actions').hidden=true;$('more').setAttribute('aria-expanded','false');
+  if(!state.page||state.loading)return;
+  preserveDraft();createDialog('',state.page.path);
+};
 $('more').onclick=()=>{$('actions').hidden=!$('actions').hidden;$('more').setAttribute('aria-expanded',String(!$('actions').hidden));};
 document.addEventListener('click',e=>{if(!e.target.closest('.header-actions')){$('actions').hidden=true;$('more').setAttribute('aria-expanded','false');}});
 function requireClean(){preserveDraft();if(state.dirty||draft(state.page?.path)){toast('Save or discard your draft before renaming or deleting.');return false;}return !!state.page;}
