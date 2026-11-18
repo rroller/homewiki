@@ -1107,6 +1107,61 @@ After the table.
         finally:
             context.close()
 
+    def test_visual_editor_shares_draft_and_preserves_untouched_markdown(self):
+        page = self.page
+        original = "# Visual test\n\nKeep [[Games|the wiki link]] and `code`.\n\n~~~python\nprint('keep')\n~~~\n\n| A | B |\n| --- | --- |\n| 1 |\n"
+        self.store.save('Visual example', original)
+        page.goto(self.url + '/Visual%20example')
+        page.locator('#edit-page').click()
+        page.locator('#tab-visual').click()
+        expect(page.locator('#visual-blocks .visual-locked')).to_have_count(2)
+        page.locator('#tab-write').click()
+        expect(page.locator('#source')).to_have_value(original)
+        page.locator('#tab-visual').click()
+        paragraph = page.get_by_role('textbox', name='Visual text block').nth(1)
+        paragraph.locator('p').click()
+        paragraph.press('End')
+        page.keyboard.insert_text(' Added')
+        page.keyboard.press('Shift+ArrowLeft')
+        page.keyboard.press('Shift+ArrowLeft')
+        page.keyboard.press('Shift+ArrowLeft')
+        page.keyboard.press('Shift+ArrowLeft')
+        page.keyboard.press('Shift+ArrowLeft')
+        page.get_by_role('button', name='Bold', exact=True).click()
+        expect(paragraph.locator('b,strong')).to_have_text('Added')
+        expected = original.replace('and `code`.', 'and `code`. **Added**')
+        page.locator('#tab-preview').click()
+        expect(page.locator('#preview strong')).to_have_text('Added')
+        page.reload()
+        expect(page.locator('#notice')).to_contain_text('Recovered your unsaved draft')
+        expect(page.locator('#source')).to_have_value(expected)
+        page.locator('#save-page').click()
+        expect(page.locator('#content strong')).to_have_text('Added')
+        self.assertEqual(self.store.read('Visual example')['content'], expected)
+
+    def test_visual_editor_adds_a_list_link_and_uploaded_image(self):
+        page = self.page
+        page.set_viewport_size({'width':390,'height':844})
+        page.reload()
+        page.locator('#edit-page').click()
+        page.locator('#tab-visual').click()
+        page.locator('#visual-add-paragraph').click()
+        paragraph = page.get_by_role('textbox', name='Visual text block').last
+        page.keyboard.insert_text('Visit ')
+        page.locator('#link-picker').click()
+        page.get_by_role('searchbox', name='Find a page to link…').fill('Completed games')
+        page.locator('#modal .result').first.click()
+        expect(paragraph.locator('a')).to_have_text('Games/Completed games')
+        page.get_by_role('button', name='Bullets', exact=True).click()
+        expect(paragraph.locator('li')).to_contain_text(re.compile(r'Visit\s+Games/Completed games'))
+        self.image_drop('#visual-blocks')
+        expect(page.locator('#visual-blocks img')).to_have_js_property('naturalWidth', 12)
+        page.locator('#tab-write').click()
+        expect(page.locator('#source')).to_have_value(re.compile(r'- Visit \[\[Games/Completed games\]\]'))
+        page.locator('#save-page').click()
+        expect(page.locator('#content img')).to_be_visible()
+        expect(page.locator('#content li').get_by_role('link', name='Games/Completed games', exact=True)).to_have_attribute('href', '/Games/Completed%20games')
+
     def test_appearance_markdown_and_mobile(self):
         p=self.page
         # Escaping and links: raw HTML and script URLs must never become active HTML.

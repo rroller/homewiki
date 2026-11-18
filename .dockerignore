@@ -6,6 +6,7 @@
 !static/
 !static/index.html
 !static/app.js
+!static/visual-editor.js
 !static/bookmarks.js
 !static/style.css
 !static/favicon.png

@@ -1,9 +1,9 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const reservedPageRoots=new Set(['api','uploads','page','recently-edited','bookmarks','bookmarks.js','app.js','style.css','favicon.png','favicon.ico']);
+const reservedPageRoots=new Set(['api','uploads','page','recently-edited','bookmarks','bookmarks.js','app.js','visual-editor.js','style.css','favicon.png','favicon.ico']);
 const pageURL = p => (reservedPageRoots.has(p.split('/')[0])?'/page/':'/') + p.split('/').map(encodeURIComponent).join('/');
-const state = {pageOrder:{parents:{},revision:null}, loading:false, recent:false, pages:[], page:null, editing:false, base:null, dirty:false, preview:false, remote:false};
+const state = {pageOrder:{parents:{},revision:null}, loading:false, recent:false, pages:[], page:null, editing:false, base:null, dirty:false, remote:false};
 let tabID;
 try { tabID=sessionStorage.getItem('homewiki:tab'); if(!tabID){tabID=crypto.randomUUID();sessionStorage.setItem('homewiki:tab',tabID);} } catch {tabID=String(Date.now())+Math.random();}
 const draftPrefix = p => 'homewiki:draft:v2:' + encodeURIComponent(p) + ':';
@@ -55,7 +55,7 @@ function trimLinkPunctuation(value){
 }
 function autoLinks(text,hold){
   text=text.replace(/<(https?:\/\/[^\s<>\x00-\x1f]+)>/gi,(whole,url)=>{
-    const html=webLink(url,url);return html?hold(html):whole;
+    const html=webLink(url,url);return html?hold(html,whole):whole;
   });
   const candidates=/(?<![\w@/.:=\u005c-])(?:https?:\/\/[^\s<>"'\x60\u005c\x00-\x1f\u2018-\u201f\u00ab\u00bb]+|(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}(?::\d{1,5})?(?:[/?#][^\s<>"'\x60\u005c\x00-\x1f\u2018-\u201f\u00ab\u00bb]*)?)/gi;
   const fileExtensions=new Set(['md','markdown','txt','json','yaml','yml','js','ts','css','html','htm','py','png','jpg','jpeg','gif','webp','svg','pdf','log']);
@@ -66,29 +66,33 @@ function autoLinks(text,hold){
       try{if(fileExtensions.has(new URL(href).hostname.split('.').at(-1).toLowerCase()))return whole;}catch{return whole;}
     }
     const html=webLink(href,label);
-    return html?hold(html)+whole.slice(label.length):whole;
+    return html?hold(html,label)+whole.slice(label.length):whole;
   });
 }
 // Markdown is escaped. Only locally uploaded raster images are rendered.
-function inline(text) {
+function inline(text, visual = false) {
   const slots=[];
-  const hold=html => {slots.push(html); return '\x01'+(slots.length-1)+'\x02';};
+  const hold=(html, original) => {
+    slots.push(visual && original !== undefined
+      ? '<span contenteditable="false" data-markdown="'+esc(original)+'">'+html+'</span>'
+      : html);
+    return '\x01'+(slots.length-1)+'\x02';};
   text=String(text).replace(/[\x01\x02]/g,'');
-  text=text.replace(/`([^`]+)`/g,(_,code)=>hold('<code>'+esc(code)+'</code>'));
+  text=text.replace(/`([^`]+)`/g,(_,code)=>hold('<code>'+esc(code)+'</code>',_));
   text=text.replace(/\[\[([^\]\n]+)\]\]/g,(_,body)=>{
     const [path,...label]=body.split('|');
-    return hold('<a href="'+esc(pageURL(path.trim()))+'">'+esc(label.join('|')||path)+'</a>');
+    return hold('<a href="'+esc(pageURL(path.trim()))+'">'+esc(label.join('|')||path)+'</a>',_);
   });
   text=text.replace(/(!?)\[([^\]\n]*)\]\((<[^>]+>|[^)\n]+)\)/g,(_,image,label,target)=>{
     target=target.replace(/^<|>$/g,'').trim();
     if(image){
-      if(/^\/uploads\/[0-9a-f]{32}\.(png|jpg|gif|webp)$/.test(target))return hold('<a class="wiki-image-link" href="'+esc(target)+'" target="_blank" rel="noopener noreferrer"><img src="'+esc(target)+'" alt="'+esc(label)+'" loading="lazy" decoding="async"></a>');
-      return hold('<span class="image-placeholder">'+esc(label||'Image')+(target.startsWith('homewiki-upload:')?'':' (use an uploaded image)')+'</span>');
+      if(/^\/uploads\/[0-9a-f]{32}\.(png|jpg|gif|webp)$/.test(target))return hold('<a class="wiki-image-link" href="'+esc(target)+'" target="_blank" rel="noopener noreferrer"><img src="'+esc(target)+'" alt="'+esc(label)+'" loading="lazy" decoding="async"></a>',_);
+      return hold('<span class="image-placeholder">'+esc(label||'Image')+(target.startsWith('homewiki-upload:')?'':' (use an uploaded image)')+'</span>',_);
     }
     let href, external=false;
     if(/^https?:\/\//i.test(target)) {href=target; external=true;}
     else if(/^mailto:/i.test(target)) href=target;
-    else if(/^[a-z][a-z\d+.-]*:/i.test(target)||target.startsWith('//')) return hold(esc(label));
+    else if(/^[a-z][a-z\d+.-]*:/i.test(target)||target.startsWith('//')) return hold(esc(label),_);
     else if(target.startsWith('#')) href=target;
     else {
       const pageTarget=target.startsWith('/page/')?target.slice(5):target;
@@ -100,7 +104,7 @@ function inline(text) {
       }
       href=pageURL(parts.join('/'));
     }
-    return hold('<a href="'+esc(href)+'"'+(external?' target="_blank" rel="noopener noreferrer"':'')+'>'+esc(label)+'</a>');
+    return hold('<a href="'+esc(href)+'"'+(external?' target="_blank" rel="noopener noreferrer"':'')+'>'+esc(label)+'</a>',_);
   });
   text=autoLinks(text,hold);
   text=esc(text).replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>').replace(/__(.+?)__/g,'<strong>$1</strong>').replace(/\*([^*]+)\*/g,'<em>$1</em>').replace(/~~(.+?)~~/g,'<del>$1</del>');
@@ -144,18 +148,21 @@ function renderList(lines,start,depth){
   }
   return {html:html+'</'+tag+'>',next:i};
 }
-function markdown(source, hideTitle=false, depth=0) {
+function markdown(source, hideTitle=false, depth=0, onBlock) {
   const lines=source.replace(/\r\n/g,'\n').split('\n'); let html='', i=0, first=true;
   const special=line=>listItem(line)||/^(#{1,6})\s|^\s*```|^\s*~~~|^>\s?|^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line);
   while(i<lines.length) {
     let line=lines[i];
     if(!line.trim()){i++;continue;}
+    const start = i;
+    const previousLength = html.length;
+    const capture = editable => onBlock?.(start, i, html.slice(previousLength), editable);
     const fence=line.match(/^\s*(```+|~~~+)(.*)$/);
-    if(fence){let code=[];i++;while(i<lines.length&&!lines[i].startsWith(fence[1]))code.push(lines[i++]);i++;html+='<pre><code>'+esc(code.join('\n'))+'</code></pre>';first=false;continue;}
+    if(fence){let code=[];i++;while(i<lines.length&&!lines[i].startsWith(fence[1]))code.push(lines[i++]);i++;html+='<pre><code>'+esc(code.join('\n'))+'</code></pre>';capture(false);first=false;continue;}
     const heading=line.match(/^(#{1,6})\s+(.+)$/);
-    if(heading){const level=heading[1].length;const id=heading[2].toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu,'').replace(/\s+/g,'-');if(!(first&&hideTitle&&level===1))html+=`<h${level} id="${esc(id)}">${inline(heading[2])}</h${level}>`;i++;first=false;continue;}
-    if(/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)){html+='<hr>';i++;first=false;continue;}
-    if(/^>/.test(line)){const block=[];while(i<lines.length&&/^>/.test(lines[i]))block.push(lines[i++].replace(/^>\s?/,''));html+='<blockquote>'+markdown(block.join('\n'))+'</blockquote>';first=false;continue;}
+    if(heading){const level=heading[1].length;const id=heading[2].toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu,'').replace(/\s+/g,'-');if(!(first&&hideTitle&&level===1))html+=`<h${level} id="${esc(id)}">${inline(heading[2], Boolean(onBlock))}</h${level}>`;i++;capture(true);first=false;continue;}
+    if(/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)){html+='<hr>';i++;capture(false);first=false;continue;}
+    if(/^>/.test(line)){const block=[];while(i<lines.length&&/^>/.test(lines[i]))block.push(lines[i++].replace(/^>\s?/,''));html+='<blockquote>'+markdown(block.join('\n'))+'</blockquote>';capture(false);first=false;continue;}
     if(line.includes('|')&&i+1<lines.length&&/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[i+1])) {
       const cells=s=>s.trim().replace(/^\||\|$/g,'').split('|').map(v=>v.trim());
       const headers=cells(line);
@@ -164,12 +171,12 @@ function markdown(source, hideTitle=false, depth=0) {
         const row=cells(lines[i++]);
         html+='<tr>'+headers.map((_,column)=>'<td>'+inline(row[column]??'')+'</td>').join('')+'</tr>';
       }
-      html+='</tbody></table>';first=false;continue;
+      html+='</tbody></table>';capture(false);first=false;continue;
     }
-    if(listItem(line)){const list=renderList(lines,i,depth);html+=list.html;i=list.next;first=false;continue;}
+    if(listItem(line)){const list=renderList(lines,i,depth);html+=list.html;i=list.next;capture(false);first=false;continue;}
     let paragraph=[line];i++;
     while(i<lines.length&&lines[i].trim()&&!special(lines[i])&&!(lines[i].includes('|')&&i+1<lines.length&&/^\s*\|?\s*:?-{3,}/.test(lines[i+1])))paragraph.push(lines[i++]);
-    html+='<p>'+paragraph.map(inline).join('<br>')+'</p>';first=false;
+    html+='<p>'+paragraph.map(text => inline(text, Boolean(onBlock))).join('<br>')+'</p>';capture(true);first=false;
   }
   return html;
 }
@@ -199,7 +206,7 @@ function sortMarkdownTable(button){
 }
 document.addEventListener('click',event=>{
   const button=event.target.closest('.markdown button.table-sort');
-  if(button)sortMarkdownTable(button);
+  if(button && !event.defaultPrevented)sortMarkdownTable(button);
 });
 function notice(message, action, handler) {
   const box=$('notice');box.replaceChildren();box.hidden=!message;
@@ -422,7 +429,7 @@ function finishUpload(path,marker,replacement){
   pendingUploads.delete(marker);
   if(state.page?.path===path&&state.editing){
     const source=$('source');
-    if(source.value.includes(marker)){const start=source.value.indexOf(marker);const cursor=source.selectionStart;source.setRangeText(replacement,start,start+marker.length,'preserve');if(cursor>=start+marker.length){const next=cursor+replacement.length-marker.length;source.setSelectionRange(next,next);}preserveDraft();if(state.preview)$('preview').innerHTML=markdown(source.value);}
+    if(source.value.includes(marker)){const start=source.value.indexOf(marker);const cursor=source.selectionStart;source.setRangeText(replacement,start,start+marker.length,'preserve');if(cursor>=start+marker.length){const next=cursor+replacement.length-marker.length;source.setSelectionRange(next,next);}preserveDraft();refreshEditorUpload(marker,replacement);}
   }else{
     try{const saved=JSON.parse(stored(draftKey(path),'null'));if(saved?.content.includes(marker)){saved.content=saved.content.replace(marker,replacement);saved.updated=Date.now();setStored(draftKey(path),JSON.stringify(saved));}}catch{ /* Preserve any existing draft if storage is unavailable. */ }
   }
@@ -444,7 +451,8 @@ async function addImages(files){
     const id=Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);
     const marker='![Uploading '+label+'…](homewiki-upload:'+id+')';pendingUploads.set(marker,path);return {file,label,marker};
   });
-  source.setRangeText('\n\n'+entries.map(entry=>entry.marker).join('\n\n')+'\n\n',source.selectionStart,source.selectionEnd,'end');preserveDraft();syncUploadControls();if(state.preview)$('preview').innerHTML=markdown(source.value);
+  const [start, end] = editorInsertRange();
+  source.setRangeText('\n\n'+entries.map(entry=>entry.marker).join('\n\n')+'\n\n',start,end,'end');preserveDraft();syncUploadControls();refreshEditorOutput();
   for(const {file,label,marker} of entries){
     try{
       const response=await fetch('/api/upload',{method:'POST',headers:{'X-Homewiki':'1','Content-Type':'application/octet-stream'},body:file});
@@ -462,7 +470,9 @@ $('main').addEventListener('dragover',event=>{if(fileDrag(event)){event.preventD
 $('main').addEventListener('dragleave',event=>{if(!$('main').contains(event.relatedTarget))$('main').classList.remove('image-drop-target');});
 $('main').addEventListener('drop',event=>{if(fileDrag(event)){event.preventDefault();$('main').classList.remove('image-drop-target');addImages(Array.from(event.dataTransfer.files));}});
 $('source').addEventListener('paste',event=>{const files=Array.from(event.clipboardData?.files||[]).filter(file=>file.type.startsWith('image/'));if(files.length){event.preventDefault();addImages(files);}});
-function setPreview(on){state.preview=on;$('source').hidden=on;$('preview').hidden=!on;$('tab-write').classList.toggle('selected',!on);$('tab-preview').classList.toggle('selected',on);if(on)$('preview').innerHTML=markdown($('source').value);}
+function setPreview(on) {
+  setEditorMode(on ? 'preview' : 'write');
+}
 $('edit-page').onclick=()=>startEdit();$('tab-write').onclick=()=>setPreview(false);$('tab-preview').onclick=()=>setPreview(true);
 $('source').addEventListener('input',preserveDraft);
 $('source').addEventListener('keydown',e=>{if(e.key==='Tab'){e.preventDefault();$('source').setRangeText('  ',$('source').selectionStart,$('source').selectionEnd,'end');preserveDraft();}});
@@ -617,7 +627,7 @@ async function compare(){
 }
 async function searchDialog(picker=false){
   const body=modal(picker?'Link to a page':'Search your wiki');const input=document.createElement('input');input.type='search';input.placeholder=picker?'Find a page to link…':'Search titles and page contents…';input.setAttribute('aria-label',input.placeholder);body.append(input);const results=document.createElement('div');body.append(results);let sequence=0;
-  async function update(){const request=++sequence;try{const pages=await api('pages?q='+encodeURIComponent(input.value));if(request!==sequence)return;results.replaceChildren();if(!pages.length){results.innerHTML='<div class="empty">No pages found.</div>';return;}for(const p of pages){const b=document.createElement('button');b.className='result';b.innerHTML='<strong>▤ '+esc(p.path)+'</strong><small>'+esc(p.excerpt)+'</small>';b.onclick=()=>{closeModal();if(picker){const text='[['+p.path+']]';const editor=$('source');editor.setRangeText(text,editor.selectionStart,editor.selectionEnd,'end');preserveDraft();if(state.preview)setPreview(true);else editor.focus();}else go(p.path);};results.append(b);}}catch(error){errorInto(body,error);}}
+  async function update(){const request=++sequence;try{const pages=await api('pages?q='+encodeURIComponent(input.value));if(request!==sequence)return;results.replaceChildren();if(!pages.length){results.innerHTML='<div class="empty">No pages found.</div>';return;}for(const p of pages){const b=document.createElement('button');b.className='result';b.innerHTML='<strong>▤ '+esc(p.path)+'</strong><small>'+esc(p.excerpt)+'</small>';b.onclick=()=>{closeModal();if(picker){const text='[['+p.path+']]';insertEditorLink(text);}else go(p.path);};results.append(b);}}catch(error){errorInto(body,error);}}
   let debounce;input.oninput=()=>{clearTimeout(debounce);sequence++;results.replaceChildren();debounce=setTimeout(update,130);};input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();results.querySelector('button')?.click();}};input.focus();await update();
 }
 $('search-open').onclick=()=>searchDialog();$('link-picker').onclick=()=>searchDialog(true);
