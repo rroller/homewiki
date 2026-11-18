@@ -274,6 +274,37 @@ class BrowserTests(unittest.TestCase):
         p.locator('.bookmark-nav').get_by_role('link',name='Recent',exact=True).click()
         expect(p.locator('.bookmark-card')).to_have_count(2)
 
+    def test_bookmark_tags_autocomplete_the_current_tag_and_keep_new_tags(self):
+        page = self.page
+        self.store.bookmarks.save({'url':'https://example.com/existing','title':'Existing',
+                                   'tags':['example', 'example project', 'reading']})
+        page.locator('#bookmarks-open').click()
+        page.locator('#add-bookmark').click()
+        page.get_by_label('Web address').fill('https://example.com/new')
+        page.get_by_label('Title (optional)').fill('New bookmark')
+        page.get_by_label('Save page text for search').uncheck()
+        tags = page.get_by_role('combobox', name='Tags')
+        tags.fill('New tag, EX')
+        suggestions = page.get_by_role('listbox', name='Existing tags')
+        expect(suggestions.get_by_role('option')).to_have_text(['example', 'example project'])
+        tags.press('ArrowDown')
+        tags.press('Enter')
+        expect(tags).to_have_value('New tag, example, ')
+        expect(page.locator('#modal')).to_be_visible()
+        tags.press_sequentially('ex')
+        expect(suggestions.get_by_role('option')).to_have_text(['example project'])
+        suggestions.get_by_role('option', name='example project').click()
+        expect(tags).to_have_value('New tag, example, example project, ')
+        tags.fill('New tag, rea, example, example project')
+        tags.evaluate("(field) => field.setSelectionRange(12, 12)")
+        tags.dispatch_event('click')
+        suggestions.get_by_role('option', name='reading', exact=True).click()
+        expect(tags).to_have_value('New tag, reading, example, example project')
+        page.get_by_role('button', name='Save bookmark', exact=True).click()
+        expect(page.locator('#modal')).not_to_be_visible()
+        self.assertEqual(self.store.bookmarks.listing('New bookmark')['items'][0]['tags'],
+                         ['example', 'example project', 'new tag', 'reading'])
+
     def test_bookmark_drafts_and_conflicting_edits(self):
         p=self.page
         p.locator('#bookmarks-open').click();p.locator('#add-bookmark').click()

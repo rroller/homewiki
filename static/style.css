@@ -48,3 +48,21 @@ aside{width:280px;padding:24px 12px 0;background:#fafafa}.brand{font-size:22px;f
 @media (max-width: 720px) { #visual-editor { padding: 12px; } }
 #visual-blocks [contenteditable]:focus, .visual-code:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
 .visual-code { width: 100%; resize: vertical; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--code); font: 13px/1.65 ui-monospace, monospace; }
+
+.bookmark-tag-suggestions {
+  margin: -8px 0 12px;
+  padding: 4px;
+  list-style: none;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.bookmark-tag-suggestions [role=option] {
+  padding: 8px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.bookmark-tag-suggestions [role=option]:hover,
+.bookmark-tag-suggestions [aria-selected=true] { background: var(--hover); }
