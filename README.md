@@ -127,7 +127,7 @@ The sidebar toolbar contains New page (pencil), Recently edited (clock), Search 
 
 Use the upper-right **••• → New subpage** menu to create a child of the current page. Enter its name; Homewiki adds the parent path automatically. Unsaved work on the parent stays in its browser draft.
 
-Choose **Edit page → Visual** to edit headings and paragraphs directly, apply bold or italic, or create lists. The **Markdown**, **Visual**, and **Preview** tabs use the same draft. Existing lists, tables, quotes, and code blocks are displayed in Visual mode and edited in Markdown mode.
+Choose **Edit page → Visual** to edit headings and paragraphs directly, apply bold or italic, or create lists. The **Markdown**, **Visual**, and **Preview** tabs use the same draft. Visual mode also lets you edit existing list items, table cells, quotes, and code blocks. Use Markdown mode to add or remove table rows and columns.
 
 A leading `# Heading` supplies the visible page title and browser-tab title. Editing it updates the rendered title after saving. The heading is shown once at the top, rather than duplicated in the article. Without a leading H1, the filename supplies the page title and Markdown headings render in the article. Page paths, sidebar labels, and internal links continue to use the filename; use Rename / move to change them.
 

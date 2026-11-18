@@ -119,7 +119,7 @@ function listItem(line){
   if(!match)return null;
   return {indent:match[1].length,ordered:/^\d/.test(match[2]),number:parseInt(match[2],10),body:match[4]||'',contentIndent:match[1].length+match[2].length+(match[3]?.length||1)};
 }
-function renderList(lines,start,depth){
+function renderList(lines,start,depth,visual){
   const first=listItem(lines[start]);const tag=first.ordered?'ol':'ul';
   let html='<'+tag+(first.ordered&&first.number!==1?' start="'+first.number+'"':'')+'>';let i=start;
   while(i<lines.length){
@@ -142,13 +142,19 @@ function renderList(lines,start,depth){
     }
     const task=body[0].match(/^\[([ xX])\](?:\s+(.*)|$)/);
     if(task)body[0]=task[2]||'';
-    let content=depth>=32?'<pre><code>'+esc(body.join('\n'))+'</code></pre>':markdown(body.join('\n'),false,depth+1);
+    let content=depth>=32?'<pre><code>'+esc(body.join('\n'))+'</code></pre>':markdown(body.join('\n'),false,depth+1,undefined,visual);
     if(task){const checkbox='<input class="task-box" type="checkbox" disabled '+(task[1]!==' '?'checked':'')+'>';content=content.startsWith('<p>')?'<p>'+checkbox+content.slice(3):checkbox+content;}
     html+='<li>'+content+'</li>';
   }
   return {html:html+'</'+tag+'>',next:i};
 }
-function markdown(source, hideTitle=false, depth=0, onBlock) {
+function tableCells(line) {
+  return line.trim().replace(/^\||(?<!\\)\|$/g,'').split(/(?<!\\)\|/);
+}
+function tableCellText(cell) {
+  return cell.trim().replace(/\\\|/g, '|');
+}
+function markdown(source, hideTitle=false, depth=0, onBlock, visual=Boolean(onBlock)) {
   const lines=source.replace(/\r\n/g,'\n').split('\n'); let html='', i=0, first=true;
   const special=line=>listItem(line)||/^(#{1,6})\s|^\s*```|^\s*~~~|^>\s?|^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line);
   while(i<lines.length) {
@@ -156,27 +162,26 @@ function markdown(source, hideTitle=false, depth=0, onBlock) {
     if(!line.trim()){i++;continue;}
     const start = i;
     const previousLength = html.length;
-    const capture = editable => onBlock?.(start, i, html.slice(previousLength), editable);
+    const capture = kind => onBlock?.(start, i, html.slice(previousLength), kind);
     const fence=line.match(/^\s*(```+|~~~+)(.*)$/);
-    if(fence){let code=[];i++;while(i<lines.length&&!lines[i].startsWith(fence[1]))code.push(lines[i++]);i++;html+='<pre><code>'+esc(code.join('\n'))+'</code></pre>';capture(false);first=false;continue;}
+    if(fence){let code=[];i++;while(i<lines.length&&!lines[i].startsWith(fence[1]))code.push(lines[i++]);i++;html+='<pre'+(visual?' data-fence="'+esc(line)+'"':'')+'><code>'+esc(code.join('\n'))+'</code></pre>';capture('code');first=false;continue;}
     const heading=line.match(/^(#{1,6})\s+(.+)$/);
-    if(heading){const level=heading[1].length;const id=heading[2].toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu,'').replace(/\s+/g,'-');if(!(first&&hideTitle&&level===1))html+=`<h${level} id="${esc(id)}">${inline(heading[2], Boolean(onBlock))}</h${level}>`;i++;capture(true);first=false;continue;}
+    if(heading){const level=heading[1].length;const id=heading[2].toLowerCase().replace(/[^\p{L}\p{N}\s-]/gu,'').replace(/\s+/g,'-');if(!(first&&hideTitle&&level===1))html+=`<h${level} id="${esc(id)}">${inline(heading[2], visual)}</h${level}>`;i++;capture('text');first=false;continue;}
     if(/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)){html+='<hr>';i++;capture(false);first=false;continue;}
-    if(/^>/.test(line)){const block=[];while(i<lines.length&&/^>/.test(lines[i]))block.push(lines[i++].replace(/^>\s?/,''));html+='<blockquote>'+markdown(block.join('\n'))+'</blockquote>';capture(false);first=false;continue;}
+    if(/^>/.test(line)){const block=[];while(i<lines.length&&/^>/.test(lines[i]))block.push(lines[i++].replace(/^>\s?/,''));html+='<blockquote>'+markdown(block.join('\n'),false,depth+1,undefined,visual)+'</blockquote>';capture('quote');first=false;continue;}
     if(line.includes('|')&&i+1<lines.length&&/^\s*\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[i+1])) {
-      const cells=s=>s.trim().replace(/^\||\|$/g,'').split('|').map(v=>v.trim());
-      const headers=cells(line);
-      html+='<table><thead><tr>'+headers.map((c,column)=>'<th scope="col"><button type="button" class="table-sort" data-column="'+column+'" title="Sort ascending"><span>'+inline(c).replace(/<\/?a\b[^>]*>/g,'')+'</span><span class="table-sort-indicator" aria-hidden="true">↕</span></button></th>').join('')+'</tr></thead><tbody>';i+=2;
+      const headers=tableCells(line).map(tableCellText);
+      html+='<table><thead><tr>'+headers.map((c,column)=>visual ? '<th scope="col">'+inline(c,true)+'</th>' : '<th scope="col"><button type="button" class="table-sort" data-column="'+column+'" title="Sort ascending"><span>'+inline(c).replace(/<\/?a\b[^>]*>/g,'')+'</span><span class="table-sort-indicator" aria-hidden="true">↕</span></button></th>').join('')+'</tr></thead><tbody>';i+=2;
       while(i<lines.length&&lines[i].includes('|')&&lines[i].trim()){
-        const row=cells(lines[i++]);
-        html+='<tr>'+headers.map((_,column)=>'<td>'+inline(row[column]??'')+'</td>').join('')+'</tr>';
+        const row=tableCells(lines[i++]).map(tableCellText);
+        html+='<tr>'+headers.map((_,column)=>'<td>'+inline(row[column]??'',visual)+'</td>').join('')+'</tr>';
       }
-      html+='</tbody></table>';capture(false);first=false;continue;
+      html+='</tbody></table>';capture('table');first=false;continue;
     }
-    if(listItem(line)){const list=renderList(lines,i,depth);html+=list.html;i=list.next;capture(false);first=false;continue;}
+    if(listItem(line)){const list=renderList(lines,i,depth,visual);html+=list.html;i=list.next;capture('list');first=false;continue;}
     let paragraph=[line];i++;
     while(i<lines.length&&lines[i].trim()&&!special(lines[i])&&!(lines[i].includes('|')&&i+1<lines.length&&/^\s*\|?\s*:?-{3,}/.test(lines[i+1])))paragraph.push(lines[i++]);
-    html+='<p>'+paragraph.map(text => inline(text, Boolean(onBlock))).join('<br>')+'</p>';capture(true);first=false;
+    html+='<p>'+paragraph.map(text => inline(text, visual)).join('<br>')+'</p>';capture('text');first=false;
   }
   return html;
 }

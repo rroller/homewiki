@@ -1114,7 +1114,8 @@ After the table.
         page.goto(self.url + '/Visual%20example')
         page.locator('#edit-page').click()
         page.locator('#tab-visual').click()
-        expect(page.locator('#visual-blocks .visual-locked')).to_have_count(2)
+        expect(page.locator('#visual-blocks .visual-code')).to_have_count(1)
+        expect(page.locator('#visual-blocks td[contenteditable]')).to_have_count(2)
         page.locator('#tab-write').click()
         expect(page.locator('#source')).to_have_value(original)
         page.locator('#tab-visual').click()
@@ -1138,6 +1139,45 @@ After the table.
         page.locator('#save-page').click()
         expect(page.locator('#content strong')).to_have_text('Added')
         self.assertEqual(self.store.read('Visual example')['content'], expected)
+
+    def test_visual_editor_edits_table_cells_end_list_and_code(self):
+        page = self.page
+        original = (
+            "# Collection\n\n"
+            "| Name | Platform | Status |\n| :--- | --- | ---: |\n"
+            "| Portal | PC |\n| Halo  | Xbox | Done |\n\n"
+            "> A quotation\n\n~~~python\nprint('original')\n~~~\n\n"
+            "## Notes\n\n- [x] Existing task\n  - Nested wiki link [[Games|Play]]\n- Last line\n"
+        )
+        self.store.save('Visual collection', original)
+        page.goto(self.url + '/Visual%20collection')
+        page.locator('#edit-page').click()
+        page.locator('#tab-visual').click()
+        visual = page.locator('#visual-blocks')
+        visual.locator('th').last.fill('Completed')
+        visual.locator('tbody tr').first.locator('td').last.fill('PC | Steam')
+        visual.locator('blockquote p').click()
+        page.keyboard.press('End')
+        page.keyboard.insert_text(' edited')
+        visual.get_by_role('textbox', name='Visual code block').fill("print('updated')")
+        visual.get_by_text('Last line', exact=True).click()
+        page.keyboard.press('End')
+        page.keyboard.insert_text(' edited')
+        page.locator('#tab-write').click()
+        source = page.locator('#source').input_value()
+        self.assertIn('| Name | Platform | Completed |\n| :--- | --- | ---: |', source)
+        self.assertIn(r'| Portal | PC | PC \| Steam |', source)
+        self.assertIn('| Halo  | Xbox | Done |', source)
+        self.assertIn('> A quotation edited', source)
+        self.assertIn("~~~python\nprint('updated')\n~~~", source)
+        self.assertIn('- [x] Existing task', source)
+        self.assertIn('  - Nested wiki link [[Games|Play]]', source)
+        self.assertIn('- Last line edited', source)
+        page.locator('#save-page').click()
+        expect(page.locator('#content tbody tr').first.locator('td').last).to_have_text('PC | Steam')
+        expect(page.locator('#content li').last).to_have_text('Last line edited')
+        expect(page.locator('#content .task-box')).to_be_checked()
+        self.assertEqual(self.store.read('Visual collection')['content'], source)
 
     def test_visual_editor_adds_a_list_link_and_uploaded_image(self):
         page = self.page
