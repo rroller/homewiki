@@ -458,8 +458,8 @@ class Handler(BaseHTTPRequestHandler):
                     data = store.page_order()
                 elif url.path == '/api/trash':
                     data = store.deleted()
-                elif url.path in ('/', '/app.js', '/bookmarks.js', '/style.css', '/favicon.png', '/favicon.ico', '/recently-edited', '/bookmarks', '/bookmarks/tags', '/bookmarks/domains', '/bookmarks/add', '/bookmarks/tools') or url.path.rstrip('/') in ('/bookmarks/add', '/bookmarks/tools') or url.path.startswith('/page/'):
-                    file = STATIC / {'/': 'index.html', '/app.js': 'app.js', '/bookmarks.js': 'bookmarks.js', '/style.css': 'style.css', '/favicon.png': 'favicon.png', '/favicon.ico': 'favicon.ico'}.get(url.path, 'index.html')
+                elif url.path in ('/', '/app.js', '/visual-editor.js', '/bookmarks.js', '/style.css', '/favicon.png', '/favicon.ico', '/recently-edited', '/bookmarks', '/bookmarks/tags', '/bookmarks/domains', '/bookmarks/add', '/bookmarks/tools') or url.path.rstrip('/') in ('/bookmarks/add', '/bookmarks/tools') or url.path.startswith('/page/'):
+                    file = STATIC / {'/': 'index.html', '/app.js': 'app.js', '/visual-editor.js': 'visual-editor.js', '/bookmarks.js': 'bookmarks.js', '/style.css': 'style.css', '/favicon.png': 'favicon.png', '/favicon.ico': 'favicon.ico'}.get(url.path, 'index.html')
                     kind = {'html': 'text/html', 'js': 'text/javascript', 'css': 'text/css', 'png': 'image/png', 'ico': 'image/x-icon'}[file.suffix[1:]]
                     self.reply(200, file.read_bytes(), kind + ('; charset=utf-8' if kind.startswith('text/') else ''))
                     return

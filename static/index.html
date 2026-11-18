@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark"><meta name="description" content="Homewiki — your personal space for notes and ideas.">
-<title>Homewiki</title><link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/png" href="/favicon.png" sizes="128x128"><link rel="stylesheet" href="/style.css"><script src="/bookmarks.js" defer></script><script src="/app.js" defer></script>
+<title>Homewiki</title><link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" type="image/png" href="/favicon.png" sizes="128x128"><link rel="stylesheet" href="/style.css"><script src="/bookmarks.js" defer></script><script src="/app.js" defer></script><script src="/visual-editor.js" defer></script>
 </head>
 <body>
 <div class="app">
@@ -21,7 +21,19 @@
 <div id="notice" role="status" hidden></div>
 <div id="reader"><article id="content" class="markdown"></article><div id="page-footer" class="page-footer"><time id="last-edited"></time><span id="word-count"></span></div></div>
 <section id="bookmarks-view" hidden aria-label="Bookmark library"></section>
-<section id="editor" hidden aria-label="Markdown editor"><div class="editor-toolbar"><div class="editor-tabs"><button id="tab-write" class="selected">Write</button><button id="tab-preview">Preview</button></div><button id="link-picker" class="subtle-button">↗ Insert page link</button><button id="add-image" class="subtle-button">Add image</button><input id="image-files" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden><span class="editor-hint">Markdown</span></div><div id="image-status" class="image-status" role="status">Drop or paste images here · PNG, JPEG, GIF, WebP · up to 10 MB each</div><textarea id="source" spellcheck="true" aria-label="Page Markdown" placeholder="Start writing…"></textarea><article id="preview" class="markdown" hidden></article><div class="editor-bottom"><span id="draft-status" role="status">All changes saved</span><div><button id="cancel-edit" class="subtle-button">Close editor</button><button id="save-page" class="primary-button">Save changes <kbd>⌘ S</kbd></button></div></div></section>
+<section id="editor" hidden aria-label="Page editor"><div class="editor-toolbar"><div class="editor-tabs"><button id="tab-write" class="selected">Markdown</button><button id="tab-visual">Visual</button><button id="tab-preview">Preview</button></div><button id="link-picker" class="subtle-button">↗ Insert page link</button><button id="add-image" class="subtle-button">Add image</button><input id="image-files" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden><span class="editor-hint">Markdown</span></div><div id="image-status" class="image-status" role="status">Drop or paste images here · PNG, JPEG, GIF, WebP · up to 10 MB each</div><textarea id="source" spellcheck="true" aria-label="Page Markdown" placeholder="Start writing…"></textarea><div id="visual-editor" hidden>
+<div id="visual-tools" role="group" aria-label="Text formatting">
+<button type="button" data-command="bold" aria-label="Bold"><strong>B</strong></button>
+<button type="button" data-command="italic" aria-label="Italic"><em>I</em></button>
+<button type="button" data-command="formatBlock" data-value="h2">Heading</button>
+<button type="button" data-command="formatBlock" data-value="p">Paragraph</button>
+<button type="button" data-command="insertUnorderedList">Bullets</button>
+<button type="button" data-command="insertOrderedList">Numbered list</button>
+<button type="button" id="visual-add-paragraph">Add paragraph</button>
+</div>
+<p id="visual-help">Edit text directly. Use Markdown to change existing lists, tables, quotes, and code blocks.</p>
+<div id="visual-blocks" class="markdown"></div>
+</div><article id="preview" class="markdown" hidden></article><div class="editor-bottom"><span id="draft-status" role="status">All changes saved</span><div><button id="cancel-edit" class="subtle-button">Close editor</button><button id="save-page" class="primary-button">Save changes <kbd>⌘ S</kbd></button></div></div></section>
 </main>
 </div>
 </div>
