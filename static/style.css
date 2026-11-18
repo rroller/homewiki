@@ -44,6 +44,7 @@ aside{width:280px;padding:24px 12px 0;background:#fafafa}.brand{font-size:22px;f
 .visual-block[contenteditable] { min-height: 2em; padding: 4px 7px; border-radius: 5px; }
 .visual-block[contenteditable]:focus { outline: 1px solid var(--accent); }
 .visual-block > :last-child { margin-bottom: 0; }
-.visual-locked { padding: 6px 7px; }
 #visual-blocks .table-sort, #visual-blocks a { cursor: default; }
 @media (max-width: 720px) { #visual-editor { padding: 12px; } }
+#visual-blocks [contenteditable]:focus, .visual-code:focus { outline: 1px solid var(--accent); outline-offset: -1px; }
+.visual-code { width: 100%; resize: vertical; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--code); font: 13px/1.65 ui-monospace, monospace; }
