@@ -138,6 +138,109 @@ function bookmarkText(id){
     view.append(bmElement('p','',bookmark.title),bmElement('pre','bookmark-saved-text',bookmark.page_text||'No page text has been saved.'));
   }).catch(error=>{if(view.isConnected){view.replaceChildren();errorInto(view,error);}});
 }
+function bookmarkTagAutocomplete(field) {
+  const list = bmElement('ul', 'bookmark-tag-suggestions');
+  list.id = 'bookmark-tag-suggestions';
+  list.setAttribute('role', 'listbox');
+  list.setAttribute('aria-label', 'Existing tags');
+  field.after(list);
+  field.setAttribute('role', 'combobox');
+  field.setAttribute('aria-autocomplete', 'list');
+  field.setAttribute('aria-controls', list.id);
+  field.autocomplete = 'off';
+
+  let tags = [];
+  let requested = false;
+  let selected = -1;
+  const normalize = value => value.normalize('NFKC').trim().toLowerCase();
+
+  function token() {
+    const value = field.value;
+    const cursor = field.selectionStart;
+    const start = cursor === 0 ? 0 : value.lastIndexOf(',', cursor - 1) + 1;
+    const nextComma = value.indexOf(',', cursor);
+    const end = nextComma === -1 ? value.length : nextComma;
+    return {value, start, end, prefix: normalize(value.slice(start, cursor))};
+  }
+
+  function close() {
+    list.replaceChildren();
+    list.hidden = true;
+    selected = -1;
+    field.setAttribute('aria-expanded', 'false');
+    field.removeAttribute('aria-activedescendant');
+  }
+
+  function accept(tag) {
+    const {value, start, end} = token();
+    const before = value.slice(start, end).match(/^\s*/)[0];
+    const text = before + tag + (end === value.length ? ', ' : '');
+    field.setRangeText(text, start, end, 'end');
+    field.dispatchEvent(new Event('input', {bubbles:true}));
+    close();
+  }
+
+  function render() {
+    close();
+    if (document.activeElement !== field) return;
+    const {value, start, end, prefix} = token();
+    if (!prefix) return;
+    const current = normalize(value.slice(start, end));
+    const used = new Set((value.slice(0, start) + value.slice(end)).split(',').map(normalize));
+    const matches = tags.filter(({name}) => {
+      const normalized = normalize(name);
+      return normalized !== current && normalized.startsWith(prefix) && !used.has(normalized);
+    }).slice(0, 6);
+    for (const [index, {name}] of matches.entries()) {
+      const option = bmElement('li', '', name);
+      option.id = list.id + '-' + index;
+      option.setAttribute('role', 'option');
+      option.setAttribute('aria-selected', 'false');
+      option.addEventListener('click', () => accept(name));
+      list.append(option);
+    }
+    if (matches.length) {
+      list.hidden = false;
+      field.setAttribute('aria-expanded', 'true');
+    }
+  }
+
+  close();
+  list.addEventListener('mousedown', event => event.preventDefault());
+  field.addEventListener('focus', () => {
+    render();
+    if (requested) return;
+    requested = true;
+    api('bookmarks/tags').then(groups => {
+      tags = groups;
+      render();
+    }).catch(() => { requested = false; });
+  });
+  field.addEventListener('input', render);
+  field.addEventListener('click', render);
+  field.addEventListener('blur', close);
+  field.addEventListener('keydown', event => {
+    if (event.isComposing || list.hidden) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+    } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const count = list.children.length;
+      const step = event.key === 'ArrowDown' ? 1 : -1;
+      selected = selected < 0 && step < 0 ? count - 1 : (selected + step + count) % count;
+      for (const [index, option] of Array.from(list.children).entries()) {
+        option.setAttribute('aria-selected', String(index === selected));
+      }
+      field.setAttribute('aria-activedescendant', list.children[selected].id);
+    } else if (event.key === 'Enter' && selected >= 0) {
+      event.preventDefault();
+      list.children[selected].click();
+    }
+  });
+}
+
 async function bookmarkForm(id=null,options={}){
   const embedded=Boolean(options.mount),body=options.mount||modal(id?'Edit bookmark':'Add bookmark'),view=bmElement('div');view.textContent='Loading…';body.append(view);
   let bookmark={url:'',title:'',tags:[],revision:null};
@@ -164,6 +267,7 @@ async function bookmarkForm(id=null,options={}){
   form.innerHTML='<label for="bookmark-url">Web address</label><input id="bookmark-url" type="text" required maxlength="4096" placeholder="https://example.com"><label for="bookmark-title">Title (optional)</label><input id="bookmark-title" type="text" maxlength="300" placeholder="Leave blank to use the page title"><p id="bookmark-title-status" class="bookmark-form-hint" role="status"></p><label for="bookmark-tags">Tags</label><input id="bookmark-tags" type="text"><p class="bookmark-form-hint">Separate tags with commas. Multiword tags are welcome.</p><label class="bookmark-extract"><input id="bookmark-extract" type="checkbox"> Save page text for search</label><p class="bookmark-form-hint">Optional. Reads public HTML or text pages; links can be saved even if extraction fails.</p><p id="bookmark-draft-status" role="status"></p><div class="dialog-buttons"><button type="button" class="subtle-button" id="bookmark-cancel">Cancel</button><button class="primary-button" type="submit">Save bookmark</button></div>';
   view.append(form);
   $('bookmark-url').value=initial.url||'';$('bookmark-title').value=initial.title||'';$('bookmark-tags').value=Array.isArray(initial.tags)?initial.tags.join(', '):'';$('bookmark-extract').checked=Boolean(initial.extract);
+  bookmarkTagAutocomplete($('bookmark-tags'));
   if(recovered)$('bookmark-draft-status').textContent='Recovered your bookmark draft.';
   let titleEdited=recovered?.titleEdited??Boolean(initial.title),titleSequence=0,titleTimer,lookupRunning=false,queuedLookup=null,runningLookup=null,lastLookup=null,titleCache=new Map(),submitting=false;
   const values=()=>({id:id||undefined,url:$('bookmark-url').value,title:$('bookmark-title').value,tags:$('bookmark-tags').value.split(',').map(tag=>tag.trim()).filter(Boolean),extract:$('bookmark-extract').checked,revision:recovered?recovered.revision:bookmark.revision,titleEdited,updated:Date.now()});
