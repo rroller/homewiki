@@ -1,4 +1,4 @@
-FROM python:3.14-slim
+FROM python:3.15-slim
 ARG HOMEWIKI_REVISION=unknown
 WORKDIR /app
 COPY server.py bookmarks.py ./
