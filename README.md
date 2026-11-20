@@ -4,7 +4,7 @@ After looking for years, I couldn't find a simple wiki for home internal use tha
 
 **NOTE: this is meant for internal use only, do not expose this to the internet**
 
-Homewiki is a lightweight, locally hosted personal wiki. Wiki pages are ordinary UTF-8 Markdown files in nested folders. The bookmark library uses SQLite. There is no build step or third-party runtime dependency.
+Homewiki is a lightweight, locally hosted personal wiki and bookmarking system. Wiki pages are ordinary UTF-8 Markdown files in nested folders. The bookmark library uses SQLite. There is no build step or third-party runtime dependency.
 
 - Collapsible sidebar, light/dark themes, and clean page URLs with clickable breadcrumbs.
 - Markdown pages with nested folders, drag-and-drop sidebar ordering, internal links, search, and image uploads.
