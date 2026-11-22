@@ -499,7 +499,10 @@ class Handler(BaseHTTPRequestHandler):
                     data = store.bookmarks.save(body)
                 elif url.path == '/api/bookmarks/title':
                     target, _ = normalize_url(body.get('url'))
-                    data = {'url': target, 'title': store.bookmarks.resolve_title(target)}
+                    if body.get('suggest_tags') is True:
+                        data = {'url': target, **store.bookmarks.preview_topics(target)}
+                    else:
+                        data = {'url': target, 'title': store.bookmarks.resolve_title(target)}
                 elif url.path == '/api/bookmarks/delete':
                     data = store.bookmarks.remove(body.get('id'), revision)
                 elif url.path == '/api/bookmarks/extract':

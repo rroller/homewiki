@@ -1,4 +1,5 @@
 """Private bookmark storage and optional public-page text extraction. Standard library only."""
+from collections import Counter
 import contextlib
 from datetime import datetime, timezone
 from html.parser import HTMLParser
@@ -78,6 +79,62 @@ def normalize_tags(value):
     return sorted(tags)
 
 
+TOPIC_STOP_WORDS = frozenset("""
+    about above after again also among article because before being below best between
+    could does each everything first from guide have here into just learn like made make
+    many more most much must need next only other over page part please read really same
+    should since some such than that their them then there these they thing things this
+    those through time together under update using very want ways website well were what
+    when where which while will with without would your
+""".split())
+TOPIC_WORD = re.compile(r'\b[^\W\d_][^\W_]{0,31}\b', re.UNICODE)
+
+
+def page_topic_tags(title, text, keywords=()):
+    """Rank publisher tags, title terms, and repeated phrases in the start of the article."""
+    def terms(value):
+        return TOPIC_WORD.findall(unicodedata.normalize('NFKC', value).casefold())
+
+    def useful(word):
+        return len(word) >= 4 and word not in TOPIC_STOP_WORDS
+
+    def phrases(words):
+        return (left + ' ' + right for left, right in zip(words, words[1:])
+                if useful(left) and useful(right) and left != right)
+
+    scores = Counter()
+    seen_metadata = set()
+    for raw in keywords[:20]:
+        tag = unicodedata.normalize('NFKC', raw).casefold().strip()
+        if (re.fullmatch(r'[^\W_][\w +.#/-]{0,63}', tag) and tag not in seen_metadata
+                and any(len(word) >= 2 and word not in TOPIC_STOP_WORDS for word in terms(tag))):
+            scores[tag] = 30
+            seen_metadata.add(tag)
+
+    heading = terms(re.split(r"\s+[|–—-]\s+", title, maxsplit=1)[0])
+    for word in dict.fromkeys(heading):
+        if useful(word):
+            scores[word] += 6
+    for phrase in phrases(heading):
+        scores[phrase] += 8
+
+    words = terms(text[:20_000])
+    for word, count in Counter(words).items():
+        if useful(word) and count >= 2:
+            scores[word] += min(count, 7)
+    for phrase, count in Counter(phrases(words)).items():
+        if count >= 2:
+            scores[phrase] += min(count + 3, 10)
+
+    tags = []
+    for tag, _ in sorted(scores.items(), key=lambda item: -item[1]):
+        if len(tag) <= 64 and not any(tag in prior.split() for prior in tags if ' ' in prior):
+            tags.append(tag)
+            if len(tags) == 6:
+                break
+    return tags
+
+
 class PageText(HTMLParser):
     ignored = {'script', 'style', 'noscript', 'nav', 'footer', 'header', 'svg', 'form', 'iframe', 'object', 'canvas', 'template', 'head'}
     blocks = {'p', 'div', 'li', 'br', 'h1', 'h2', 'h3', 'h4', 'section', 'article', 'main', 'td'}
@@ -90,8 +147,15 @@ class PageText(HTMLParser):
         self.title = []
         self.parts = []
         self.main = []
+        self.keywords = []
 
     def handle_starttag(self, tag, attrs):
+        if tag == 'meta' and len(self.keywords) < 20:
+            attributes = dict(attrs)
+            name = (attributes.get('name') or attributes.get('property') or '').lower()
+            content = (attributes.get('content') or '')[:512]
+            if name in ('keywords', 'article:tag', 'article:section'):
+                self.keywords.extend(content.split(',')[:20 - len(self.keywords)])
         if tag == 'title':
             self.title_depth += 1
         if tag in self.ignored:
@@ -149,7 +213,7 @@ def public_addresses(host, port):
     return list(dict.fromkeys(result))
 
 
-def fetch_page_text(value, *, allow_title_only=False):
+def fetch_page_text(value, *, allow_title_only=False, include_keywords=False):
     """No proxies, credentials, cookies, subresources, scripts or unvalidated redirects."""
     if not FETCH_SLOTS.acquire(blocking=False):
         raise BookmarkError(429, 'Text extraction is busy. Try again shortly.')
@@ -211,6 +275,8 @@ def fetch_page_text(value, *, allow_title_only=False):
                     parser = PageText()
                     parser.feed(source)
                     result = parser.result()
+                    if include_keywords:
+                        result['keywords'] = parser.keywords
                 if not result['text'] and not (allow_title_only and result['title']):
                     raise BookmarkError(400, 'No readable page text was found.')
                 return result
@@ -338,6 +404,14 @@ class BookmarkStore:
                     'extracted_at': datetime.now(timezone.utc).isoformat(), 'title': result['title']}
         except BookmarkError as error:
             return {'extraction_status': 'failed', 'extraction_error': error.message}
+
+    def preview_topics(self, url):
+        try:
+            page = fetch_page_text(url, allow_title_only=True, include_keywords=True)
+        except BookmarkError:
+            return {'title': '', 'suggested_tags': []}
+        return {'title': page['title'],
+                'suggested_tags': page_topic_tags(page['title'], page['text'], page.get('keywords', ()))}
 
     def resolve_title(self, url):
         try:
