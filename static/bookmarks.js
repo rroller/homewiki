@@ -138,7 +138,7 @@ function bookmarkText(id){
     view.append(bmElement('p','',bookmark.title),bmElement('pre','bookmark-saved-text',bookmark.page_text||'No page text has been saved.'));
   }).catch(error=>{if(view.isConnected){view.replaceChildren();errorInto(view,error);}});
 }
-function bookmarkTagAutocomplete(field) {
+function bookmarkTagAutocomplete(field, context) {
   const list = bmElement('ul', 'bookmark-tag-suggestions');
   list.id = 'bookmark-tag-suggestions';
   list.setAttribute('role', 'listbox');
@@ -153,6 +153,44 @@ function bookmarkTagAutocomplete(field) {
   let requested = false;
   let selected = -1;
   const normalize = value => value.normalize('NFKC').trim().toLowerCase();
+  const suggestions = bmElement('div', 'bookmark-suggested-tags');
+  if (context) {
+    suggestions.setAttribute('role', 'group');
+    suggestions.setAttribute('aria-label', 'Suggested tags');
+    list.after(suggestions);
+  }
+
+  function renderSuggested() {
+    if (!context) return;
+    const parts = field.value.split(',').map(normalize).filter(Boolean);
+    const used = new Set(parts);
+    const words = value => normalize(value).match(/[\p{L}\p{N}]+/gu)?.join(' ') || '';
+    const search = ' ' + words([context.url.value, context.title.value].join(' ')) + ' ';
+    const ranked = tags.filter(({name}) => !used.has(normalize(name))).map(tag => {
+      const phrase = words(tag.name);
+      return {...tag, matches: Boolean(phrase) && search.includes(' ' + phrase + ' ')};
+    });
+    ranked.sort((a,b) => Number(b.matches) - Number(a.matches) || b.count - a.count || a.name.localeCompare(b.name));
+    const proposed = parts.length < 32 ? ranked.slice(0,6) : [];
+    suggestions.replaceChildren();
+    suggestions.hidden = proposed.length === 0;
+    if (suggestions.hidden) return;
+    suggestions.append(bmElement('span', '', 'Suggested tags'));
+    for (const {name} of proposed) {
+      const button = bmElement('button', 'bookmark-chip', '+ ' + name);
+      button.type = 'button';
+      button.setAttribute('aria-label', 'Add tag ' + name);
+      button.onclick = () => {
+        const current = field.value.trim().replace(/,+$/, '').trimEnd();
+        if (used.has(normalize(name))) return;
+        field.value = current ? current + ', ' + name : name;
+        field.focus();
+        field.setSelectionRange(field.value.length, field.value.length);
+        field.dispatchEvent(new Event('input', {bubbles:true}));
+      };
+      suggestions.append(button);
+    }
+  }
 
   function token() {
     const value = field.value;
@@ -207,14 +245,20 @@ function bookmarkTagAutocomplete(field) {
 
   close();
   list.addEventListener('mousedown', event => event.preventDefault());
-  field.addEventListener('focus', () => {
-    render();
+  function loadTags() {
     if (requested) return;
     requested = true;
     api('bookmarks/tags').then(groups => {
+      if (!field.isConnected) return;
       tags = groups;
       render();
+      renderSuggested();
     }).catch(() => { requested = false; });
+  }
+  if (context) loadTags();
+  field.addEventListener('focus', () => {
+    render();
+    loadTags();
   });
   field.addEventListener('input', render);
   field.addEventListener('click', render);
@@ -239,6 +283,8 @@ function bookmarkTagAutocomplete(field) {
       list.children[selected].click();
     }
   });
+  renderSuggested();
+  return renderSuggested;
 }
 
 async function bookmarkForm(id=null,options={}){
@@ -267,12 +313,12 @@ async function bookmarkForm(id=null,options={}){
   form.innerHTML='<label for="bookmark-url">Web address</label><input id="bookmark-url" type="text" required maxlength="4096" placeholder="https://example.com"><label for="bookmark-title">Title (optional)</label><input id="bookmark-title" type="text" maxlength="300" placeholder="Leave blank to use the page title"><p id="bookmark-title-status" class="bookmark-form-hint" role="status"></p><label for="bookmark-tags">Tags</label><input id="bookmark-tags" type="text"><p class="bookmark-form-hint">Separate tags with commas. Multiword tags are welcome.</p><label class="bookmark-extract"><input id="bookmark-extract" type="checkbox"> Save page text for search</label><p class="bookmark-form-hint">Optional. Reads public HTML or text pages; links can be saved even if extraction fails.</p><p id="bookmark-draft-status" role="status"></p><div class="dialog-buttons"><button type="button" class="subtle-button" id="bookmark-cancel">Cancel</button><button class="primary-button" type="submit">Save bookmark</button></div>';
   view.append(form);
   $('bookmark-url').value=initial.url||'';$('bookmark-title').value=initial.title||'';$('bookmark-tags').value=Array.isArray(initial.tags)?initial.tags.join(', '):'';$('bookmark-extract').checked=Boolean(initial.extract);
-  bookmarkTagAutocomplete($('bookmark-tags'));
   if(recovered)$('bookmark-draft-status').textContent='Recovered your bookmark draft.';
   let titleEdited=recovered?.titleEdited??Boolean(initial.title),titleSequence=0,titleTimer,lookupRunning=false,queuedLookup=null,runningLookup=null,lastLookup=null,titleCache=new Map(),submitting=false;
   const values=()=>({id:id||undefined,url:$('bookmark-url').value,title:$('bookmark-title').value,tags:$('bookmark-tags').value.split(',').map(tag=>tag.trim()).filter(Boolean),extract:$('bookmark-extract').checked,revision:recovered?recovered.revision:bookmark.revision,titleEdited,updated:Date.now()});
-  form.oninput=()=>{$('bookmark-draft-status').textContent=setStored(key,JSON.stringify(values()))?'Draft saved in this browser.':'Browser storage unavailable; keep this dialog open.';};
   const urlField=$('bookmark-url'),titleField=$('bookmark-title'),titleStatus=$('bookmark-title-status');
+  const renderSuggested = bookmarkTagAutocomplete($('bookmark-tags'), id ? null : {url:urlField, title:titleField});
+  form.oninput=()=>{renderSuggested();$('bookmark-draft-status').textContent=setStored(key,JSON.stringify(values()))?'Draft saved in this browser.':'Browser storage unavailable; keep this dialog open.';};
   const active=()=>present()&&!submitting;
   const keepDraft=()=>{if(active())form.oninput();};
   async function lookupTitle(url,sequence){
@@ -311,11 +357,13 @@ async function bookmarkForm(id=null,options={}){
     try{
       const saved=await api('bookmarks/save',value);
       clearDraft();
-      if(embedded){
-        if(present())showBookmarkCaptureSuccess(options.mount,saved);
-      }else{
-        closeModal();
-        if(!state.bookmarks){history.pushState(null,'','/bookmarks');route();}else navigateBookmarks();
+      if (present()) {
+        if (!embedded) closeModal();
+        if (embedded) history.replaceState(null, '', '/bookmarks');
+        else if (!id && (location.pathname !== '/bookmarks' || location.search)) {
+          history.pushState(null, '', '/bookmarks');
+        }
+        navigateBookmarks();
       }
       toast(saved.extraction_status==='failed'?'Bookmark saved. Page text could not be saved; you can retry later.':'Bookmark saved');
     }catch(error){
@@ -349,18 +397,6 @@ function bookmarkCaptureValues(params){
   const tags=[...(params.get('tags')||'').split(','),...params.getAll('tag')].map(value=>value.trim()).filter(Boolean);
   return {url,title:(params.get('title')||'').trim().slice(0,300),tags,
     extract:!['0','false'].includes((params.get('extract')||'').toLowerCase())};
-}
-function showBookmarkCaptureSuccess(mount,bookmark){
-  mount.replaceChildren();history.replaceState(null,'','/bookmarks/add');
-  $('page-title').textContent='Bookmark saved';document.title='Bookmark saved · Homewiki';
-  const card=bmElement('div','bookmark-capture-success');card.setAttribute('role','status');
-  card.append(bmElement('p','','Saved to your Homewiki library.'));
-  const original=bookmarkLink(bookmark.title,bookmark.url,'bookmark-title');original.target='_blank';original.rel='noopener noreferrer';card.append(original);
-  if(bookmark.extraction_status==='failed')card.append(bmElement('p','bookmark-form-hint','The link is saved. Its page text could not be fetched; you can retry from the library.'));
-  const links=bmElement('div','bookmark-capture-links');
-  links.append(bookmarkLink('View bookmarks','/bookmarks'),bookmarkLink('Add another','/bookmarks/add'));
-  card.append(links,bmElement('p','bookmark-form-hint','Use your browser’s Back button to return to the page you were reading.'));
-  mount.append(card);
 }
 function homewikiBookmarklet(base=location.origin+'/bookmarks/add'){
   return 'javascript:void(function(){var p=new URLSearchParams({url:location.href,title:document.title.slice(0,300)});location.assign('+JSON.stringify(base)+'+"?"+p.toString());}());';

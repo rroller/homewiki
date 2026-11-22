@@ -176,7 +176,7 @@ Indent child items with spaces or tabs. Two- and four-space bullet lists work, a
 
 ## Bookmarks
 
-Open **Bookmarks** in the sidebar, then **Add bookmark**. Save a web address, an optional title and comma-separated tags. After you type or paste a public URL, its title is filled into the form for you to review and edit. Changing the URL replaces an automatically filled title, while a title you have edited is kept. If unavailable, you can enter a title yourself or leave it blank to use the domain. Tags are case-insensitive and may contain spaces. The original bookmark time stays the same when you edit its details.
+Open **Bookmarks** in the sidebar, then **Add bookmark**. Save a web address, an optional title and comma-separated tags. After you type or paste a public URL, its title is filled into the form for you to review and edit. Changing the URL replaces an automatically filled title, while a title you have edited is kept. If unavailable, you can enter a title yourself or leave it blank to use the domain. Tags are case-insensitive and may contain spaces. Click a suggested tag to add it, or type in the field to autocomplete existing tags. Saving a new bookmark returns you to **Recent**. The original bookmark time stays the same when you edit its details.
 
 - **Recent** lists newly bookmarked links first. You can also sort by oldest first or title.
 - **Tags** shows all tags and their bookmark counts. Click one to browse its links; clicking another tag on a bookmark narrows the list to links carrying both tags.
@@ -201,7 +201,7 @@ On iPhone Safari:
 1. Tap **Copy bookmarklet**.
 2. Use Safari’s **Share → Add Bookmark**, name it **Save to Homewiki**, and save it in **Favorites**.
 3. Open **Bookmarks → Favorites → Edit**, edit that bookmark, and replace its address with the copied code, including the leading javascript:.
-4. While reading a page, open Favorites and tap **Save to Homewiki**. The capture form receives its URL, current title, and any selected text. Review the fields, add tags, and tap **Save bookmark**. Use Back to return to the original page.
+4. While reading a page, open Favorites and tap **Save to Homewiki**. The capture form receives its URL and current title. Review the fields, add tags, and tap **Save bookmark**. Use Back to return to the original page.
 
 On desktop, drag the **Save to Homewiki** link to your bookmarks bar. Some pages or browsers block bookmarklets; a shortcut or extension can open the capture address directly instead. See [Apple’s Safari bookmark guide](https://support.apple.com/guide/iphone/bookmark-a-website-iph42ab2f3a7/ios) and [JavaScript URL limitations](https://developer.mozilla.org/en-US/docs/Web/URI/Reference/Schemes/javascript).
 
@@ -221,7 +221,7 @@ The dedicated page is **/bookmarks/add**. Opening it only prepares a form; savin
 | tags | Optional comma-separated tags. Repeated tag parameters also work. |
 | extract | Page-text saving defaults on; use 0 or false to start unchecked. |
 
-Titles and tags remain editable. Capture drafts are kept separately for each shared URL and do not replace an unfinished bookmark in the normal Add dialog. A successful save clears the source parameters so reloading does not submit or repeat it. The capture page does not follow return-URL parameters or save/edit a bookmark from query parameters alone.
+Titles and tags remain editable. Capture drafts are kept separately for each shared URL and do not replace an unfinished bookmark in the normal Add dialog. A successful save opens **Recent**. Reloading shows the bookmark list. The capture page does not follow return-URL parameters or save/edit a bookmark from query parameters alone.
 
 ## Page history
 

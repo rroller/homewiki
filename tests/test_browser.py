@@ -305,6 +305,32 @@ class BrowserTests(unittest.TestCase):
         self.assertEqual(self.store.bookmarks.listing('New bookmark')['items'][0]['tags'],
                          ['example', 'example project', 'new tag', 'reading'])
 
+    def test_clickable_tag_suggestions_and_new_bookmark_redirect_from_filter(self):
+        page = self.page
+        for index in range(2):
+            self.store.bookmarks.save({
+                'url':f'https://example.net/{index}', 'title':f'Existing {index}',
+                'tags':['common'] + (['home lab'] if not index else [])
+            })
+        page.goto(self.url + '/bookmarks?tag=common&sort=oldest')
+        page.locator('#add-bookmark').click()
+        suggestions = page.get_by_role('group', name='Suggested tags')
+        expect(suggestions.get_by_role('button').first).to_have_text('+ common')
+        page.get_by_label('Web address', exact=True).fill('https://example.com/new')
+        page.get_by_label('Title (optional)', exact=True).fill('Building a Home Lab')
+        expect(suggestions.get_by_role('button').first).to_have_text('+ home lab')
+        tags = page.get_by_role('combobox', name='Tags')
+        expect(tags).to_have_value('')
+        tags.fill('new tag')
+        suggestions.get_by_role('button', name='Add tag home lab', exact=True).click()
+        expect(tags).to_have_value('new tag, home lab')
+        expect(suggestions.get_by_role('button', name='Add tag home lab', exact=True)).to_have_count(0)
+        page.get_by_label('Save page text for search', exact=True).uncheck()
+        page.get_by_role('button', name='Save bookmark', exact=True).click()
+        expect(page).to_have_url(self.url + '/bookmarks')
+        expect(page.locator('.bookmark-title').first).to_have_text('Building a Home Lab')
+        self.assertEqual(self.store.bookmarks.listing()['items'][0]['tags'], ['home lab', 'new tag'])
+
     def test_bookmark_drafts_and_conflicting_edits(self):
         p=self.page
         p.locator('#bookmarks-open').click();p.locator('#add-bookmark').click()
@@ -501,17 +527,16 @@ class BrowserTests(unittest.TestCase):
         self.assertEqual(self.store.bookmarks.listing()['total'],0)
         p.get_by_label('Title (optional)',exact=True).fill('My reviewed title')
         p.get_by_role('button',name='Save bookmark',exact=True).click()
-        expect(p.locator('.bookmark-capture-success')).to_be_visible()
-        expect(p.locator('#page-title')).to_have_text('Bookmark saved')
-        self.assertEqual(p.url,self.url+'/bookmarks/add')
+        expect(p).to_have_url(self.url+'/bookmarks')
+        expect(p.locator('.bookmark-title')).to_have_text('My reviewed title')
+        expect(p.get_by_role('link',name='Recent',exact=True)).to_have_attribute('aria-current','page')
         saved=self.store.bookmarks.listing()['items'][0]
         self.assertEqual(saved['url'],target)
         self.assertEqual(saved['title'],'My reviewed title')
         self.assertEqual(saved['tags'],['reading','reference'])
         self.assertNotIn('description',saved)
         p.reload()
-        expect(p.locator('#page-title')).to_have_text('Add bookmark')
-        expect(p.get_by_label('Web address',exact=True)).to_have_value('')
+        expect(p.locator('.bookmark-title')).to_have_text('My reviewed title')
         self.assertEqual(self.store.bookmarks.listing()['total'],1)
 
     def test_capture_shared_text_finds_url_and_autofills_title_on_mobile(self):
@@ -534,7 +559,7 @@ class BrowserTests(unittest.TestCase):
         p.get_by_label('Title (optional)',exact=True).fill('A'*300)
         p.get_by_label('Save page text for search',exact=True).uncheck()
         p.get_by_role('button',name='Save bookmark',exact=True).click()
-        expect(p.locator('.bookmark-capture-success')).to_be_visible()
+        expect(p).to_have_url(self.url+'/bookmarks')
         self.assertTrue(p.evaluate('document.documentElement.scrollWidth<=innerWidth'))
 
     def test_capture_drafts_are_separate_for_each_shared_url_and_modal(self):
@@ -581,7 +606,8 @@ class BrowserTests(unittest.TestCase):
         self.assertEqual(self.store.bookmarks.listing()['total'],0)
         source.get_by_label('Save page text for search',exact=True).uncheck()
         source.get_by_role('button',name='Save bookmark',exact=True).click()
-        expect(source.locator('.bookmark-capture-success')).to_be_visible()
+        expect(source).to_have_url(self.url+'/bookmarks')
+        expect(source.locator('.bookmark-title')).to_have_text('Article & notes')
         self.assertEqual(self.store.bookmarks.listing()['total'],1)
         source.go_back()
         expect(source).to_have_url(source_url)
