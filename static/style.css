@@ -33,7 +33,7 @@ aside{width:280px;padding:24px 12px 0;background:#fafafa}.brand{font-size:22px;f
 
 #build-version a{color:inherit;text-decoration:none;font-family:ui-monospace,SFMono-Regular,Consolas,monospace}#build-version a:hover{color:var(--link);text-decoration:underline}
 
-.bookmark-capture-intro{font-size:13px;color:var(--muted);line-height:1.8;margin:0 0 24px}.bookmark-capture-form{max-width:600px}.bookmark-capture-form .bookmark-form-hint,.bookmark-tool-card .bookmark-form-hint{font-size:11px;color:var(--muted);line-height:1.8;margin:0 0 14px}.bookmark-capture-form #bookmark-draft-status{font-size:10px;color:var(--muted);line-height:1.7}.bookmark-capture-form .dialog-buttons{flex-wrap:wrap}.bookmark-capture-success{overflow-wrap:anywhere;border:1px solid var(--border);background:var(--sidebar);padding:22px;border-radius:10px}.bookmark-capture-success>p:first-child{font-size:13px}.bookmark-capture-links{display:flex;flex-wrap:wrap;gap:20px;margin:20px 0}.bookmark-capture-links a,.bookmark-tool-card>a:not(.bookmarklet-install){color:var(--link);font-size:13px}.bookmark-tool-card{border:1px solid var(--border);border-radius:10px;padding:22px;margin:20px 0;overflow-wrap:anywhere}.bookmark-tool-card h2{font-size:17px;margin:0 0 16px}.bookmark-tool-card h3{font-size:14px;margin:25px 0 12px}.bookmark-tool-card label{display:block;margin-top:20px}.bookmark-tool-card li{font-size:13px;line-height:1.8;padding:5px 0}.bookmark-tool-card ol{padding-left:20px}.bookmark-tool-code{display:block;width:100%;padding:12px;background:var(--sidebar);border:1px solid var(--border);border-radius:7px;resize:vertical;color:var(--text);font:11px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;margin:8px 0 12px}.bookmark-tool-example{padding:12px;border-radius:7px;background:var(--sidebar);font:11px/1.8 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.bookmarklet-install{display:inline-block;background:var(--accent);color:var(--bg);padding:10px 15px;border-radius:7px;font-size:13px;text-decoration:none;margin-bottom:12px;cursor:grab}@media(max-width:720px){.bookmark-tool-card{padding:16px}.bookmark-toolbar{gap:10px}.bookmark-nav{row-gap:6px}}
+.bookmark-capture-intro{font-size:13px;color:var(--muted);line-height:1.8;margin:0 0 24px}.bookmark-capture-form{max-width:600px}.bookmark-capture-form .bookmark-form-hint,.bookmark-tool-card .bookmark-form-hint{font-size:11px;color:var(--muted);line-height:1.8;margin:0 0 14px}.bookmark-capture-form #bookmark-draft-status{font-size:10px;color:var(--muted);line-height:1.7}.bookmark-capture-form .dialog-buttons{flex-wrap:wrap}.bookmark-tool-card>a:not(.bookmarklet-install){color:var(--link);font-size:13px}.bookmark-tool-card{border:1px solid var(--border);border-radius:10px;padding:22px;margin:20px 0;overflow-wrap:anywhere}.bookmark-tool-card h2{font-size:17px;margin:0 0 16px}.bookmark-tool-card h3{font-size:14px;margin:25px 0 12px}.bookmark-tool-card label{display:block;margin-top:20px}.bookmark-tool-card li{font-size:13px;line-height:1.8;padding:5px 0}.bookmark-tool-card ol{padding-left:20px}.bookmark-tool-code{display:block;width:100%;padding:12px;background:var(--sidebar);border:1px solid var(--border);border-radius:7px;resize:vertical;color:var(--text);font:11px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;margin:8px 0 12px}.bookmark-tool-example{padding:12px;border-radius:7px;background:var(--sidebar);font:11px/1.8 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:pre-wrap;overflow-wrap:anywhere}.bookmarklet-install{display:inline-block;background:var(--accent);color:var(--bg);padding:10px 15px;border-radius:7px;font-size:13px;text-decoration:none;margin-bottom:12px;cursor:grab}@media(max-width:720px){.bookmark-tool-card{padding:16px}.bookmark-toolbar{gap:10px}.bookmark-nav{row-gap:6px}}
 
 #visual-editor { padding: 14px 20px 20px; }
 #visual-tools { display: flex; flex-wrap: wrap; gap: 4px; }
@@ -66,3 +66,13 @@ aside{width:280px;padding:24px 12px 0;background:#fafafa}.brand{font-size:22px;f
 }
 .bookmark-tag-suggestions [role=option]:hover,
 .bookmark-tag-suggestions [aria-selected=true] { background: var(--hover); }
+
+.bookmark-suggested-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px;
+}
+.bookmark-suggested-tags > span { font-size: 12px; color: var(--muted); margin-right: 2px; }
+.bookmark-suggested-tags button { margin: 0; }
