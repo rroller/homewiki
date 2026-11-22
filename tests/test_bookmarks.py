@@ -277,6 +277,21 @@ class FetchTests(unittest.TestCase):
         self.assertEqual(connection.request.call_args.kwargs['headers']['Host'], 'example.com')
         connection.close.assert_called_once()
 
+    def test_topic_preview_uses_publisher_metadata_and_readable_page_text(self):
+        connection = Mock()
+        connection.getresponse.return_value = self.response(body=(
+            b'<head><title>A field guide</title><meta property="article:tag" content="Bird watching"></head>'
+            b'<nav>ignore ignore ignore</nav><main>Marsh birds and wetlands. Marsh birds thrive nearby.</main>'
+        ))
+        with patch.object(app, 'public_addresses', return_value=['8.8.8.8']), \
+             patch.object(app.socket, 'create_connection', return_value=Mock()), \
+             patch.object(app.http.client, 'HTTPConnection', return_value=connection):
+            page = app.fetch_page_text('http://example.com/guide', include_keywords=True)
+        suggestions = app.page_topic_tags(page['title'], page['text'], page['keywords'])
+        self.assertEqual(suggestions[0], 'bird watching')
+        self.assertIn('marsh birds', suggestions)
+        self.assertNotIn('ignore', suggestions)
+
     def test_title_only_html_can_supply_a_title_without_readable_body(self):
         for allow in [True, False]:
             connection = Mock()

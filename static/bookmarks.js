@@ -138,6 +138,15 @@ function bookmarkText(id){
     view.append(bmElement('p','',bookmark.title),bmElement('pre','bookmark-saved-text',bookmark.page_text||'No page text has been saved.'));
   }).catch(error=>{if(view.isConnected){view.replaceChildren();errorInto(view,error);}});
 }
+const titleTagStopWords = new Set(
+  'about after also article best build building complete everything first from getting guide have here into latest learn make more most only overview page should step steps that their them then these this those through tutorial under using what when where which will with without your'.split(' ')
+);
+
+function bookmarkTitleTags(title) {
+  const words = title.split(/\s+[|–—-]\s+/)[0].normalize('NFKC').toLowerCase().match(/[\p{L}][\p{L}\p{N}]{2,31}/gu) || [];
+  return [...new Set(words.filter(word => !titleTagStopWords.has(word)))].slice(0, 4);
+}
+
 function bookmarkTagAutocomplete(field, context) {
   const list = bmElement('ul', 'bookmark-tag-suggestions');
   list.id = 'bookmark-tag-suggestions';
@@ -166,23 +175,34 @@ function bookmarkTagAutocomplete(field, context) {
     const used = new Set(parts);
     const words = value => normalize(value).match(/[\p{L}\p{N}]+/gu)?.join(' ') || '';
     const search = ' ' + words([context.url.value, context.title.value].join(' ')) + ' ';
-    const ranked = tags.filter(({name}) => !used.has(normalize(name))).map(tag => {
-      const phrase = words(tag.name);
-      return {...tag, matches: Boolean(phrase) && search.includes(' ' + phrase + ' ')};
-    });
-    ranked.sort((a,b) => Number(b.matches) - Number(a.matches) || b.count - a.count || a.name.localeCompare(b.name));
-    const proposed = parts.length < 32 ? ranked.slice(0,6) : [];
+    const ranked = tags.map(({name, count}) => {
+      const phrase = words(name);
+      return {name, count, matches: Boolean(phrase) && search.includes(' ' + phrase + ' ')};
+    }).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name));
+    const relevant = ranked.filter(tag => tag.matches && !used.has(normalize(tag.name))).map(tag => tag.name);
+    const topical = [...context.topics(), ...bookmarkTitleTags(context.title.value)];
+    const candidates = [...relevant.slice(0, 2), ...topical, ...relevant.slice(2), ...ranked.map(tag => tag.name)];
+    const proposed = [];
+    if (parts.length < 32) {
+      for (const name of candidates) {
+        const key = normalize(name);
+        if (!key || used.has(key)) continue;
+        proposed.push(name);
+        used.add(key);
+        if (proposed.length === 6) break;
+      }
+    }
     suggestions.replaceChildren();
     suggestions.hidden = proposed.length === 0;
     if (suggestions.hidden) return;
     suggestions.append(bmElement('span', '', 'Suggested tags'));
-    for (const {name} of proposed) {
+    for (const name of proposed) {
       const button = bmElement('button', 'bookmark-chip', '+ ' + name);
       button.type = 'button';
       button.setAttribute('aria-label', 'Add tag ' + name);
       button.onclick = () => {
         const current = field.value.trim().replace(/,+$/, '').trimEnd();
-        if (used.has(normalize(name))) return;
+        if (current.split(',').some(part => normalize(part) === normalize(name))) return;
         field.value = current ? current + ', ' + name : name;
         field.focus();
         field.setSelectionRange(field.value.length, field.value.length);
@@ -314,39 +334,85 @@ async function bookmarkForm(id=null,options={}){
   view.append(form);
   $('bookmark-url').value=initial.url||'';$('bookmark-title').value=initial.title||'';$('bookmark-tags').value=Array.isArray(initial.tags)?initial.tags.join(', '):'';$('bookmark-extract').checked=Boolean(initial.extract);
   if(recovered)$('bookmark-draft-status').textContent='Recovered your bookmark draft.';
-  let titleEdited=recovered?.titleEdited??Boolean(initial.title),titleSequence=0,titleTimer,lookupRunning=false,queuedLookup=null,runningLookup=null,lastLookup=null,titleCache=new Map(),submitting=false;
+  let titleEdited=recovered?.titleEdited??Boolean(initial.title),titleSequence=0,titleTimer,lookupRunning=false,queuedLookup=null,lastLookup=null,submitting=false;
+  const titleCache = new Map();
   const values=()=>({id:id||undefined,url:$('bookmark-url').value,title:$('bookmark-title').value,tags:$('bookmark-tags').value.split(',').map(tag=>tag.trim()).filter(Boolean),extract:$('bookmark-extract').checked,revision:recovered?recovered.revision:bookmark.revision,titleEdited,updated:Date.now()});
   const urlField=$('bookmark-url'),titleField=$('bookmark-title'),titleStatus=$('bookmark-title-status');
-  const renderSuggested = bookmarkTagAutocomplete($('bookmark-tags'), id ? null : {url:urlField, title:titleField});
+  const renderSuggested = bookmarkTagAutocomplete($('bookmark-tags'), id ? null : {
+    url:urlField, title:titleField, topics:() => titleCache.get(urlField.value.trim())?.suggested_tags || []
+  });
   form.oninput=()=>{renderSuggested();$('bookmark-draft-status').textContent=setStored(key,JSON.stringify(values()))?'Draft saved in this browser.':'Browser storage unavailable; keep this dialog open.';};
   const active=()=>present()&&!submitting;
   const keepDraft=()=>{if(active())form.oninput();};
-  async function lookupTitle(url,sequence){
-    if(!active()||titleEdited||sequence!==titleSequence)return;
-    if(titleCache.has(url)){const title=titleCache.get(url);titleField.value=title;titleStatus.textContent=title?'Title found. You can edit it.':'No title found. Enter your own.';keepDraft();return;}
-    if(lookupRunning){queuedLookup={url,sequence};return;}
-    lookupRunning=true;runningLookup=url;titleStatus.textContent='Looking up page title…';
-    try{
-      const result=await api('bookmarks/title',{url});
-      if(!active()||sequence!==titleSequence||titleEdited||urlField.value.trim()!==url)return;
-      lastLookup=url;titleCache.set(url,result.title||'');
-      if(result.title){titleField.value=result.title;titleStatus.textContent='Title found. You can edit it.';keepDraft();}
-      else titleStatus.textContent='No title found. Enter your own.';
-    }catch(error){if(active()&&sequence===titleSequence&&!titleEdited)titleStatus.textContent='Could not read title. Enter your own.';}
-    finally{lookupRunning=false;runningLookup=null;const next=queuedLookup;queuedLookup=null;if(next&&active())lookupTitle(next.url,next.sequence);}
+  function applyPreview(result) {
+    if (!titleEdited) {
+      titleField.value = result.title || '';
+      titleStatus.textContent = result.title ? 'Title found. You can edit it.' : 'No title found. Enter your own.';
+      keepDraft();
+    } else {
+      renderSuggested();
+    }
   }
-  function scheduleTitle(immediate=false){
-    clearTimeout(titleTimer);const sequence=++titleSequence,url=urlField.value.trim();
-    if(!active()||titleEdited)return;
-    titleField.value='';titleStatus.textContent='';keepDraft();
-    if(!url)return;
-    try{const candidate=new URL(/^https?:\/\//i.test(url)?url:'https://'+url);if(!['http:','https:'].includes(candidate.protocol)||!candidate.hostname||(!candidate.hostname.includes('.')&&!candidate.hostname.includes(':')&&candidate.hostname!=='localhost'))return;}catch{return;}
-    if(immediate)lookupTitle(url,sequence);else titleTimer=setTimeout(()=>lookupTitle(url,sequence),400);
+
+  async function lookupTitle(url, sequence) {
+    if (!active() || sequence !== titleSequence || (id && titleEdited)) return;
+    if (titleCache.has(url)) {
+      lastLookup = url;
+      applyPreview(titleCache.get(url));
+      return;
+    }
+    if (lookupRunning) {
+      queuedLookup = {url, sequence};
+      return;
+    }
+    lookupRunning = true;
+    if (!titleEdited) titleStatus.textContent = 'Looking up page title…';
+    try {
+      const result = await api('bookmarks/title', {url, suggest_tags:!id});
+      if (!active() || sequence !== titleSequence || urlField.value.trim() !== url) return;
+      lastLookup = url;
+      titleCache.set(url, result);
+      applyPreview(result);
+    } catch {
+      if (active() && sequence === titleSequence && !titleEdited) titleStatus.textContent = 'Could not read title. Enter your own.';
+    } finally {
+      lookupRunning = false;
+      const next = queuedLookup;
+      queuedLookup = null;
+      if (next && active()) lookupTitle(next.url, next.sequence);
+    }
   }
-  urlField.addEventListener('input',()=>scheduleTitle());
-  urlField.addEventListener('blur',()=>{if(!lookupRunning&&lastLookup!==urlField.value.trim())scheduleTitle(true);});
-  titleField.addEventListener('input',()=>{titleEdited=true;titleSequence++;clearTimeout(titleTimer);queuedLookup=null;titleStatus.textContent='';});
-  if(!titleEdited&&urlField.value.trim())scheduleTitle();
+
+  function scheduleTitle(immediate = false) {
+    clearTimeout(titleTimer);
+    const sequence = ++titleSequence;
+    const url = urlField.value.trim();
+    if (!active() || (id && titleEdited)) return;
+    if (!titleEdited) {
+      titleField.value = '';
+      titleStatus.textContent = '';
+    }
+    renderSuggested();
+    if (!url) return;
+    try {
+      const candidate = new URL(/^https?:\/\//i.test(url) ? url : 'https://' + url);
+      if (!['http:', 'https:'].includes(candidate.protocol)
+          || !candidate.hostname
+          || (!candidate.hostname.includes('.') && !candidate.hostname.includes(':') && candidate.hostname !== 'localhost')) return;
+    } catch { return; }
+    if (immediate) lookupTitle(url, sequence);
+    else titleTimer = setTimeout(() => lookupTitle(url, sequence), 400);
+  }
+
+  urlField.addEventListener('input', () => scheduleTitle());
+  urlField.addEventListener('blur', () => {
+    if (!lookupRunning && lastLookup !== urlField.value.trim()) scheduleTitle(true);
+  });
+  titleField.addEventListener('input', () => {
+    titleEdited = true;
+    titleStatus.textContent = '';
+  });
+  if (urlField.value.trim() && (!titleEdited || !id)) scheduleTitle();
   const exit=()=>{if(embedded){history.pushState(null,'','/bookmarks');route();}else closeModal();};
   $('bookmark-cancel').onclick=exit;
   const discard=bmElement('button','subtle-button','Discard draft');discard.type='button';discard.onclick=()=>{clearDraft();exit();};

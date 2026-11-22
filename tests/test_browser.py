@@ -396,11 +396,17 @@ class BrowserTests(unittest.TestCase):
         p.locator('#bookmarks-open').click();p.locator('#add-bookmark').click()
         with p.expect_request(lambda request:request.url.endswith('/api/bookmarks/title')):
             p.get_by_label('Web address',exact=True).fill('https://example.com/slow')
-        p.get_by_label('Title (optional)',exact=True).fill('Already editing this myself')
+        p.get_by_label('Title (optional)',exact=True).fill('Urban gardening guide')
+        expect(p.get_by_role('button',name='Add tag gardening',exact=True)).to_be_visible()
         with p.expect_response(lambda response:response.url.endswith('/api/bookmarks/title')):
-            pending[0].fulfill(json={'title':'Late automatic title'})
-        p.wait_for_timeout(100)
-        expect(p.get_by_label('Title (optional)',exact=True)).to_have_value('Already editing this myself')
+            pending[0].fulfill(json={'title':'Late automatic title','suggested_tags':['container gardening']})
+        topic = p.get_by_role('button',name='Add tag container gardening',exact=True)
+        expect(topic).to_be_visible()
+        field = p.get_by_role('combobox',name='Tags')
+        expect(field).to_have_value('')
+        topic.click()
+        expect(field).to_have_value('container gardening')
+        expect(p.get_by_label('Title (optional)',exact=True)).to_have_value('Urban gardening guide')
 
     def test_bookmark_title_uses_latest_url_and_keeps_manual_title_on_url_change(self):
         p=self.page;pending=[]
@@ -408,15 +414,17 @@ class BrowserTests(unittest.TestCase):
         def handle(route):
             if route.request.post_data_json['url'].endswith('/old'):
                 pending.append(route)
-            else:route.fulfill(json={'title':'New URL title'})
+            else:route.fulfill(json={'title':'New URL title','suggested_tags':['new topic']})
         p.route('**/api/bookmarks/title',handle)
         p.locator('#bookmarks-open').click();p.locator('#add-bookmark').click()
         with p.expect_request(lambda request:request.url.endswith('/api/bookmarks/title')):
             p.get_by_label('Web address',exact=True).fill('https://example.com/old')
         p.get_by_label('Web address',exact=True).fill('https://example.com/new')
         p.wait_for_timeout(450)
-        pending[0].fulfill(json={'title':'Stale old URL title'})
+        pending[0].fulfill(json={'title':'Stale old URL title','suggested_tags':['old topic']})
         expect(p.get_by_label('Title (optional)',exact=True)).to_have_value('New URL title')
+        expect(p.get_by_role('button',name='Add tag new topic',exact=True)).to_be_visible()
+        expect(p.get_by_role('button',name='Add tag old topic',exact=True)).to_have_count(0)
         p.get_by_label('Title (optional)',exact=True).fill('My custom title')
         p.get_by_label('Web address',exact=True).fill('https://example.com/third')
         p.wait_for_timeout(450)

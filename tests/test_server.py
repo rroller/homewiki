@@ -427,6 +427,17 @@ class HTTPTests(unittest.TestCase):
             status,raw,_=self.request('/api/bookmarks/title',{'url':'example.com'},headers)
         self.assertEqual(status,200)
         self.assertEqual(json.loads(raw),{'url':'https://example.com/','title':'Example title'})
+        with patch.object(bookmarks, 'fetch_page_text', return_value={
+            'title': 'A practical guide', 'text': 'Coral reefs are habitats. Coral reefs support marine life.',
+            'keywords': ['ocean ecology', 'OCEAN ECOLOGY', 'page', '<invalid>'],
+        }) as fetch:
+            status,raw,_=self.request('/api/bookmarks/title',{'url':'example.com','suggest_tags':True},headers)
+        self.assertEqual(status,200)
+        preview=json.loads(raw)
+        self.assertEqual(preview['suggested_tags'][0],'ocean ecology')
+        self.assertIn('coral reefs',preview['suggested_tags'])
+        self.assertNotIn('text',preview)
+        fetch.assert_called_once_with('https://example.com/',allow_title_only=True,include_keywords=True)
         self.assertEqual(self.server.store.bookmarks.listing()['total'],before)
         self.assertEqual(self.request('/api/bookmarks/title',{'url':'javascript:alert(1)'},headers)[0],400)
 
