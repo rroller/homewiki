@@ -1,7 +1,7 @@
 'use strict';
 const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const reservedPageRoots=new Set(['api','uploads','page','recently-edited','bookmarks','bookmarks.js','app.js','visual-editor.js','style.css','favicon.png','favicon.ico']);
+const reservedPageRoots=new Set(['api','uploads','page','recently-edited','settings','bookmarks','bookmarks.js','app.js','visual-editor.js','style.css','favicon.png','favicon.ico']);
 const pageURL = p => (reservedPageRoots.has(p.split('/')[0])?'/page/':'/') + p.split('/').map(encodeURIComponent).join('/');
 const state = {pageOrder:{parents:{},revision:null}, loading:false, recent:false, pages:[], page:null, editing:false, base:null, dirty:false, remote:false};
 let tabID;
@@ -359,6 +359,24 @@ function navigateRecent(){
   if(innerWidth<721)sidebar(true);window.scrollTo(0,0);
   refreshPages().catch(error=>{if(turn===navigating)notice(error.message);});
 }
+function navigateSettings() {
+  leaveBookmarks();
+  preserveDraft();
+  ++navigating;
+  Object.assign(state, {loading:false, recent:false, page:null, editing:false, dirty:false});
+  notice('');
+  $('page-title').textContent = 'Settings';
+  document.title = 'Settings · Homewiki';
+  renderBreadcrumb('Settings');
+  for (const id of ['reader', 'editor', 'edit-page', 'more', 'actions', 'page-footer']) $(id).hidden = true;
+  $('recently-edited').removeAttribute('aria-current');
+  $('settings-open').setAttribute('aria-current', 'page');
+  $('settings-view').hidden = false;
+  renderTree();
+  if (innerWidth < 721) sidebar(true);
+  window.scrollTo(0, 0);
+}
+
 function paintPage(){
   const page=state.page;if(!page)return;
   $('more').hidden=false;$('page-footer').hidden=false;$('recently-edited').removeAttribute('aria-current');
@@ -390,6 +408,13 @@ async function navigate(path){
 }
 function route(){
   const bookmarkPath=location.pathname.replace(/\/+$/,'');
+  if (bookmarkPath === '/settings' && !location.hash.startsWith('#/page/')) {
+    if (location.pathname !== bookmarkPath) history.replaceState(null, '', bookmarkPath + location.search + location.hash);
+    navigateSettings();
+    return;
+  }
+  $('settings-view').hidden = true;
+  $('settings-open').removeAttribute('aria-current');
   if(['/bookmarks','/bookmarks/tags','/bookmarks/domains','/bookmarks/add','/bookmarks/tools'].includes(bookmarkPath)&&!location.hash.startsWith('#/page/')){
     if(bookmarkPath!==location.pathname)history.replaceState(null,'',bookmarkPath+location.search+location.hash);
     navigateBookmarks();return;
@@ -413,7 +438,7 @@ document.addEventListener('click',event=>{
   const link=event.target.closest('a[href]');if(!link||link.hasAttribute('download')||(link.target&&link.target!=='_self'))return;
   const url=new URL(link.href,location.href);
   const root=decodeURIComponent(url.pathname.split('/')[1]||'');
-  const wikiPath=!reservedPageRoots.has(root)||url.pathname.startsWith('/page/')||url.pathname==='/recently-edited'||url.pathname==='/bookmarks'||url.pathname.startsWith('/bookmarks/');
+  const wikiPath=!reservedPageRoots.has(root)||url.pathname.startsWith('/page/')||url.pathname==='/recently-edited'||url.pathname==='/settings'||url.pathname==='/bookmarks'||url.pathname.startsWith('/bookmarks/');
   const localAnchor=url.pathname===location.pathname&&url.hash&&!url.hash.startsWith('#/page/');
   if(url.origin===location.origin&&wikiPath&&!localAnchor){
     event.preventDefault();history.pushState(null,'',url.pathname+url.search+url.hash);route();

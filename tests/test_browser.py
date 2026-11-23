@@ -679,7 +679,7 @@ class BrowserTests(unittest.TestCase):
         p.locator('#search-open').click();p.get_by_role('searchbox').fill('useful');p.locator('.result').filter(has_text='Projects/My notebook').click();expect(p.locator('#page-title')).to_have_text('My notebook')
         p.locator('#more').click();p.locator('#rename-page').click();p.locator('#page-path').fill('Projects/Renamed');p.get_by_role('button',name='Rename page',exact=True).click();expect(p.locator('#page-title')).to_have_text('My notebook');expect(p.locator('#breadcrumb')).to_have_text('Projects/Renamed')
         p.locator('#more').click();p.locator('#delete-page').click();p.get_by_role('button',name='Move to trash',exact=True).click();expect(p.locator('#modal')).not_to_be_visible()
-        p.locator('#trash-open').click();p.locator('.result').filter(has_text='Projects/Renamed').click();expect(p.locator('#page-title')).to_have_text('My notebook');expect(p.locator('#breadcrumb')).to_have_text('Projects/Renamed')
+        p.locator('#settings-open').click();p.locator('#trash-open').click();p.locator('.result').filter(has_text='Projects/Renamed').click();expect(p.locator('#page-title')).to_have_text('My notebook');expect(p.locator('#breadcrumb')).to_have_text('Projects/Renamed')
         # External changes cannot overwrite an unsaved draft.
         p.locator('#edit-page').click();p.locator('#source').fill('# Local draft\nMy local changes')
         self.store.path('Projects/Renamed').write_text('# External edit\nChanged outside the app')
@@ -1270,6 +1270,7 @@ After the table.
     def test_download_and_confirm_restore_of_a_backup_zip(self):
         page = self.page
         self.store.bookmarks.save({'url':'https://example.com/backup', 'title':'Backup test', 'tags':['saved']})
+        page.locator('#settings-open').click()
         page.locator('#backup-open').click()
         with page.expect_download() as archive:
             page.get_by_role('link', name='Download backup ZIP', exact=True).click()
@@ -1288,6 +1289,8 @@ After the table.
         expect(page.locator('#modal')).not_to_be_visible()
         self.assertFalse(self.store.path(snapshot['path']).exists())
         self.assertEqual(self.store.bookmarks.listing(tags=['saved'])['total'],1)
+        expect(page).to_have_url(self.url+'/Home')
+        page.locator('#settings-open').click()
         page.locator('#backup-open').click()
         with page.expect_download() as previous:
             page.get_by_role('link', name='Download ZIP from before the last restore').click()
@@ -1303,9 +1306,20 @@ After the table.
         self.assertEqual(p.evaluate('document.documentElement.scrollWidth <= innerWidth'),True)
         if os.getenv('HOMEWIKI_SCREENSHOTS'):
             target=Path(os.environ['HOMEWIKI_SCREENSHOTS']);target.mkdir(parents=True,exist_ok=True);p.screenshot(path=str(target/'homewiki-light.png'),full_page=True)
-        p.locator('#theme-toggle').click();expect(p.locator('html')).to_have_attribute('data-theme','dark');p.reload();expect(p.locator('html')).to_have_attribute('data-theme','dark')
+        expect(p.locator('.sidebar-bottom button')).to_have_count(0)
+        p.locator('#settings-open').click()
+        expect(p).to_have_url(self.url+'/settings')
+        expect(p.locator('#settings-open')).to_have_attribute('aria-current','page')
+        p.locator('#theme-toggle').click();expect(p.locator('html')).to_have_attribute('data-theme','dark')
+        p.reload();expect(p.locator('#settings-view')).to_be_visible();expect(p.locator('html')).to_have_attribute('data-theme','dark')
+        p.locator('#brand-home').click();expect(p.locator('#settings-view')).to_be_hidden()
         if os.getenv('HOMEWIKI_SCREENSHOTS'):p.screenshot(path=str(target/'homewiki-dark.png'),full_page=True)
         p.locator('#collapse').click();expect(p.locator('#sidebar')).not_to_be_visible();p.locator('#expand').click();expect(p.locator('#sidebar')).to_be_visible()
+        p.set_viewport_size({'width':390,'height':844});p.goto(self.url+'/settings')
+        expect(p.locator('#settings-view')).to_be_visible()
+        expect(p.locator('#sidebar')).not_to_be_visible()
+        self.assertTrue(p.evaluate('document.documentElement.scrollWidth <= innerWidth'))
+        p.goto(self.url+'/Home')
         p.set_viewport_size({'width':390,'height':844});p.reload();expect(p.locator('#sidebar')).not_to_be_visible();p.locator('#expand').click();expect(p.locator('#sidebar')).to_be_visible();p.locator('#tree').get_by_role('link',name='Games I own',exact=False).click();expect(p.locator('#page-title')).to_have_text('Games I own');expect(p.locator('#sidebar')).not_to_be_visible()
         self.assertEqual(p.evaluate('document.documentElement.scrollWidth <= innerWidth'),True)
         p.locator('#edit-page').click();p.locator('#source').fill('# Mobile draft');p.locator('#cancel-edit').click();p.get_by_role('button',name='Discard draft').click();p.locator('#modal').get_by_role('button',name='Discard draft',exact=True).click();expect(p.locator('#notice')).to_be_hidden()

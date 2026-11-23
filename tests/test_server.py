@@ -281,7 +281,7 @@ class HTTPTests(unittest.TestCase):
         except HTTPError as e:
             with e:return e.code,e.read(),e.headers
     def test_http_assets_and_lifecycle(self):
-        for path in ['/','/app.js','/style.css','/page/Home','/page/Games/Games%20I%20own','/recently-edited']:
+        for path in ['/','/app.js','/style.css','/page/Home','/page/Games/Games%20I%20own','/recently-edited','/settings','/settings/']:
             status,body,headers=self.request(path);self.assertEqual(status,200);self.assertIn("default-src 'self'",headers['Content-Security-Policy']);self.assertTrue(body)
         headers={'Content-Type':'application/json','X-Homewiki':'1'}
         status,raw,_=self.request('/api/save',{'path':'Test/Nested','content':'hello'},headers);self.assertEqual(status,200)

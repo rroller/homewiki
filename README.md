@@ -123,7 +123,7 @@ Docker deployments can set `HOMEWIKI_ALLOWED_HOSTS` to the permitted IP/hostname
 
 ## Use the wiki
 
-The sidebar toolbar contains New page (pencil), Recently edited (clock), Search (magnifying glass), Bookmark tools (wrench), and the sidebar toggle. The tools icon opens the Safari bookmarklet setup and capture address. Only top-level page groups have collapse arrows; their nested pages stay expanded when the group is open. Drag a page or group above/below a sibling to set its order, or focus it and press Alt+↑/↓. Ordering is saved on the server for all browsers and never changes page paths. New pages appear after ordered siblings; deleted entries are ignored.
+The sidebar toolbar contains New page (pencil), Recently edited (clock), Search (magnifying glass), Bookmark tools (wrench), and the sidebar toggle. The tools icon opens the Safari bookmarklet setup and capture address. Open **Settings** at the bottom of the sidebar for appearance, deleted pages, and backups. Only top-level page groups have collapse arrows; their nested pages stay expanded when the group is open. Drag a page or group above/below a sibling to set its order, or focus it and press Alt+↑/↓. Ordering is saved on the server for all browsers and never changes page paths. New pages appear after ordered siblings; deleted entries are ignored.
 
 Use the upper-right **••• → New subpage** menu to create a child of the current page. Enter its name; Homewiki adds the parent path automatically. Unsaved work on the parent stays in its browser draft.
 
@@ -141,7 +141,7 @@ Page URLs use `/Home` or `/Games/Completed%20games`, with no `/page/` prefix. Di
 
 Ctrl/Cmd+K opens search; Ctrl/Cmd+S saves an edit. Closing the editor retains its browser draft; Discard draft removes it. Rename/move changes only the selected Markdown file. Children and links to its old path remain unchanged, and existing destinations are never replaced.
 
-Delete moves a page into Recently deleted. Children remain accessible. Restore it through the sidebar; if the original path is occupied, move that replacement first. Trash has no automatic expiry or permanent-delete UI.
+Delete moves a page into Recently deleted. Children remain accessible. Restore it through **Settings → Recently deleted**; if the original path is occupied, move that replacement first. Trash has no automatic expiry or permanent-delete UI.
 
 The footer uses the Markdown file's modification time for its last-edit date, displayed in the browser's local time zone. Recently edited (`/recently-edited`) is a generated index ordered newest first. It includes external file edits, excludes deleted pages, and is not itself an editable Markdown file. Renaming or restoring a page preserves its content edit date.
 
@@ -268,7 +268,7 @@ Unsaved edits go immediately into localStorage with separate keys for tabs. Revi
 
 ### Backup and restore in Homewiki
 
-Open **Backup & restore** at the bottom of the sidebar. **Download backup ZIP** saves your Markdown pages, uploaded images, page history, trash, sidebar order, and bookmarks in one file. The ZIP contains saved server data. Browser drafts and appearance preferences live in each browser.
+Open **Settings** at the bottom of the sidebar and choose **Manage backups**. **Download backup ZIP** saves your Markdown pages, uploaded images, page history, trash, sidebar order, and bookmarks in one file. The ZIP contains saved server data. Browser drafts and appearance preferences live in each browser.
 
 To restore, select a Homewiki backup ZIP, check **Replace my current saved data**, then choose **Restore backup**. Homewiki checks the ZIP first and keeps a separate ZIP of the data it replaces. To retrieve that snapshot, reopen the dialog and choose **Download ZIP from before the last restore**. Download that snapshot before another restore if you want to keep it.
 
