@@ -27,8 +27,8 @@ class BookmarkError(Exception):
         self.status, self.message = status, message
 
 
-def normalize_url(value):
-    if not isinstance(value, str) or not value.strip() or len(value) > 4096:
+def normalize_url(value, *, max_length=4096):
+    if not isinstance(value, str) or not value.strip() or len(value) > max_length:
         raise BookmarkError(400, 'Enter a web address of up to 4096 characters.')
     value = value.strip()
     if any(ord(c) < 32 or ord(c) == 127 for c in value) or '\\' in value:

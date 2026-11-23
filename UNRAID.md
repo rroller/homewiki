@@ -80,6 +80,8 @@ For a template-based install, use **Docker → Check for Updates**, then update 
 
 To pin a particular build, change **Repository** to a published `ghcr.io/rroller/homewiki:sha-<full-commit>` tag. Keep the same data mapping, allowed hosts, and port. Return to `:latest` to follow normal updates.
 
+For a portable ZIP of your saved wiki and bookmarks, use **Backup & restore** in the Homewiki sidebar. The app can restore the ZIP directly from your browser. See the [backup and restore guide](README.md#backup-and-restore-in-homewiki).
+
 Back up the complete data folder with Homewiki stopped, including hidden files and `.trash`. Preserve UID/GID 10001 ownership when restoring. Use your usual appdata backup process, or run a manual backup to an existing backup share:
 
 ```sh

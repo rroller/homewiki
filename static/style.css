@@ -76,3 +76,6 @@ aside{width:280px;padding:24px 12px 0;background:#fafafa}.brand{font-size:22px;f
 }
 .bookmark-suggested-tags > span { font-size: 12px; color: var(--muted); margin-right: 2px; }
 .bookmark-suggested-tags button { margin: 0; }
+
+.backup-download { color: var(--link); }
+#backup-open > span:first-child { width: 18px; text-align: center; }

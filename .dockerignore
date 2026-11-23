@@ -3,6 +3,7 @@
 !Dockerfile
 !server.py
 !bookmarks.py
+!backup.py
 !static/
 !static/index.html
 !static/app.js

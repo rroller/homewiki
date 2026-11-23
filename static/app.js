@@ -636,6 +636,67 @@ async function searchDialog(picker=false){
   let debounce;input.oninput=()=>{clearTimeout(debounce);sequence++;results.replaceChildren();debounce=setTimeout(update,130);};input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();results.querySelector('button')?.click();}};input.focus();await update();
 }
 $('search-open').onclick=()=>searchDialog();$('link-picker').onclick=()=>searchDialog(true);
+function backupDialog() {
+  const body = modal('Backup & restore');
+  body.innerHTML = `
+    <p>Download a ZIP of your saved pages, images, page history, trash, sidebar order, and bookmarks.</p>
+    <p><a class="backup-download" href="/api/backup" download>Download backup ZIP</a></p>
+    <p id="backup-previous" hidden><a class="backup-download" href="/api/backup/previous" download>Download ZIP from before the last restore</a></p>
+    <form id="backup-restore-form">
+      <p>Restoring replaces your current saved data with the contents of the ZIP. Homewiki keeps a backup of the data it replaces.</p>
+      <label for="backup-file">Homewiki backup ZIP</label>
+      <input id="backup-file" type="file" accept=".zip,application/zip" required>
+      <label class="bookmark-extract"><input id="backup-confirm" type="checkbox" required> Replace my current saved data</label>
+      <p id="backup-status" role="status" hidden></p>
+      <div class="dialog-buttons"><button id="backup-restore-button" type="submit" class="primary-button" disabled>Restore backup</button></div>
+    </form>`;
+  const form = $('backup-restore-form');
+  const file = $('backup-file');
+  const confirm = $('backup-confirm');
+  const button = $('backup-restore-button');
+  const status = $('backup-status');
+  const previous = $('backup-previous');
+  api('backup/status').then(result => { previous.hidden = !result.previous; }).catch(() => {});
+  const update = () => { button.disabled = !file.files.length || !confirm.checked; };
+  file.onchange = () => { confirm.checked = false; update(); };
+  confirm.onchange = update;
+
+  form.onsubmit = async event => {
+    event.preventDefault();
+    if (button.disabled) return;
+    const archive = file.files[0];
+    preserveDraft();
+    if (pendingUploads.size) {
+      toast('Wait for images to finish uploading before restoring.');
+      return;
+    }
+    file.disabled = confirm.disabled = button.disabled = true;
+    status.hidden = false;
+    status.textContent = 'Uploading and restoring backup…';
+    try {
+      const response = await fetch('/api/backup/restore', {
+        method:'POST',
+        headers:{'Content-Type':'application/zip','X-Homewiki':'1','X-Homewiki-Restore':'replace'},
+        body:archive
+      });
+      if (!response.ok) {
+        const failure = await response.json().catch(() => ({}));
+        throw new Error(failure.error || 'The backup could not be restored.');
+      }
+    } catch (error) {
+      status.textContent = error.message;
+      file.disabled = confirm.disabled = false;
+      update();
+      return;
+    }
+    closeModal();
+    toast('Backup restored');
+    await refreshPages().catch(error => toast('Backup restored. Refresh to view your restored pages.'));
+    go(state.pages.find(page => page.path === 'Home')?.path || state.pages[0]?.path || 'Home');
+  };
+}
+$('backup-open').onclick = backupDialog;
+
 $('trash-open').onclick=async()=>{const body=modal('Recently deleted');body.innerHTML='<p>Deleted Markdown files are kept until you remove them from the data folder. Select a page to restore it.</p>';try{const pages=await api('trash');if(!pages.length){body.innerHTML+='<div class="empty">Nothing in the trash. A clean slate.</div>';return;}for(const page of pages){const b=document.createElement('button');b.className='result';b.innerHTML='<strong>↶ '+esc(page.path)+'</strong><small>Deleted '+esc(new Date(page.deleted).toLocaleString())+' · Restore page</small>';b.onclick=async()=>{b.disabled=true;try{const restored=await api('restore',{id:page.id});await refreshPages();closeModal();go(restored.path);toast('Page restored');}catch(error){errorInto(body,error);b.disabled=false;}};body.append(b);}}catch(error){errorInto(body,error);}};
 window.addEventListener('beforeunload',e=>{if(pendingUploads.size||(state.editing&&state.dirty)){preserveDraft();e.preventDefault();e.returnValue='';}});
 window.addEventListener('storage',e=>{if(e.key?.startsWith(draftPrefix(state.page?.path))&&e.key!==draftKey(state.page?.path)&&state.editing&&e.newValue){notice('Another tab is editing this page. Each tab keeps its own draft; saving checks for conflicts.');}});

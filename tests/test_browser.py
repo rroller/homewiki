@@ -1267,6 +1267,34 @@ After the table.
         expect(page.locator('#content img')).to_be_visible()
         expect(page.locator('#content li').get_by_role('link', name='Games/Completed games', exact=True)).to_have_attribute('href', '/Games/Completed%20games')
 
+    def test_download_and_confirm_restore_of_a_backup_zip(self):
+        page = self.page
+        self.store.bookmarks.save({'url':'https://example.com/backup', 'title':'Backup test', 'tags':['saved']})
+        page.locator('#backup-open').click()
+        with page.expect_download() as archive:
+            page.get_by_role('link', name='Download backup ZIP', exact=True).click()
+        archive = archive.value
+        self.assertTrue(archive.suggested_filename.endswith('.zip'))
+        snapshot = self.store.save('After backup', '# After backup')
+        self.assertEqual(page.request.post(self.url + '/api/backup/restore', data=b'zip',
+            headers={'X-Homewiki':'1','Content-Type':'application/zip'}).status,403)
+        upload = page.get_by_label('Homewiki backup ZIP')
+        button = page.get_by_role('button', name='Restore backup', exact=True)
+        upload.set_input_files(archive.path())
+        expect(button).to_be_disabled()
+        page.get_by_role('checkbox', name='Replace my current saved data').check()
+        button.click()
+        expect(page.locator('#toast')).to_have_text('Backup restored')
+        expect(page.locator('#modal')).not_to_be_visible()
+        self.assertFalse(self.store.path(snapshot['path']).exists())
+        self.assertEqual(self.store.bookmarks.listing(tags=['saved'])['total'],1)
+        page.locator('#backup-open').click()
+        with page.expect_download() as previous:
+            page.get_by_role('link', name='Download ZIP from before the last restore').click()
+        import zipfile
+        with zipfile.ZipFile(previous.value.path()) as saved:
+            self.assertEqual(saved.read('pages/After backup.md'),b'# After backup')
+
     def test_appearance_markdown_and_mobile(self):
         p=self.page
         # Escaping and links: raw HTML and script URLs must never become active HTML.
