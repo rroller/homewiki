@@ -12,7 +12,7 @@
 <a id="bookmarks-open" class="bookmark-library-link" href="/bookmarks"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg>Bookmarks</a>
 <div class="section-label">Pages <span id="page-count"></span></div>
 <nav id="tree" aria-label="Pages"></nav>
-<div class="sidebar-bottom"><button id="trash-open"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7m4-7v7"/></svg><span>Recently deleted</span></button><button id="backup-open"><span>⇩</span><span>Backup &amp; restore</span></button><button id="theme-toggle"><svg class="ui-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 13A8.5 8.5 0 0 1 11 3.5 8.5 8.5 0 1 0 20.5 13z"/></svg><span id="theme-label">Dark appearance</span></button><div class="local-note"><i></i> Local & yours <span id="build-version">Version unavailable</span></div></div>
+<div class="sidebar-bottom"><a id="settings-open" class="settings-link" href="/settings"><span aria-hidden="true">⚙</span><span>Settings</span></a><div class="local-note"><i></i> Local & yours <span id="build-version">Version unavailable</span></div></div>
 </aside>
 <button id="sidebar-shade" class="mobile-shade" type="button" aria-label="Close sidebar"></button>
 <div class="main-shell">
@@ -21,6 +21,20 @@
 <div id="notice" role="status" hidden></div>
 <div id="reader"><article id="content" class="markdown"></article><div id="page-footer" class="page-footer"><time id="last-edited"></time><span id="word-count"></span></div></div>
 <section id="bookmarks-view" hidden aria-label="Bookmark library"></section>
+<section id="settings-view" hidden aria-label="Settings">
+  <section class="settings-row" aria-labelledby="settings-appearance">
+    <div><h2 id="settings-appearance">Appearance</h2><p>Choose a theme for this browser.</p></div>
+    <button id="theme-toggle" class="outline-button" type="button"><span id="theme-label">Dark appearance</span></button>
+  </section>
+  <section class="settings-row" aria-labelledby="settings-trash">
+    <div><h2 id="settings-trash">Recently deleted</h2><p>Find and restore deleted wiki pages.</p></div>
+    <button id="trash-open" class="outline-button" type="button">View deleted pages</button>
+  </section>
+  <section class="settings-row" aria-labelledby="settings-backup">
+    <div><h2 id="settings-backup">Backup &amp; restore</h2><p>Download your wiki and bookmarks as a ZIP, or restore a backup.</p></div>
+    <button id="backup-open" class="outline-button" type="button">Manage backups</button>
+  </section>
+</section>
 <section id="editor" hidden aria-label="Page editor"><div class="editor-toolbar"><div class="editor-tabs"><button id="tab-write" class="selected">Markdown</button><button id="tab-visual">Visual</button><button id="tab-preview">Preview</button></div><button id="link-picker" class="subtle-button">↗ Insert page link</button><button id="add-image" class="subtle-button">Add image</button><input id="image-files" type="file" accept="image/png,image/jpeg,image/gif,image/webp" multiple hidden><span class="editor-hint">Markdown</span></div><div id="image-status" class="image-status" role="status">Drop or paste images here · PNG, JPEG, GIF, WebP · up to 10 MB each</div><textarea id="source" spellcheck="true" aria-label="Page Markdown" placeholder="Start writing…"></textarea><div id="visual-editor" hidden>
 <div id="visual-tools" role="group" aria-label="Text formatting">
 <button type="button" data-command="bold" aria-label="Bold"><strong>B</strong></button>
