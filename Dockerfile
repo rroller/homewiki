@@ -1,7 +1,7 @@
 FROM python:3.15-slim
 ARG HOMEWIKI_REVISION=unknown
 WORKDIR /app
-COPY server.py bookmarks.py ./
+COPY server.py bookmarks.py backup.py ./
 COPY static ./static
 RUN printf '%s\n' "$HOMEWIKI_REVISION" > /app/REVISION && useradd --uid 10001 --create-home wiki && mkdir /data && chown wiki:wiki /data
 USER wiki

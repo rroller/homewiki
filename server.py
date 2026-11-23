@@ -13,6 +13,7 @@ import shutil
 import sqlite3
 import subprocess
 from bookmarks import BookmarkStore, BookmarkError, normalize_url
+from backup import BackupError, BackupManager, MAX_ARCHIVE, PREVIOUS
 import tempfile
 import threading
 import uuid
@@ -63,11 +64,14 @@ class Store:
         self.trash = self.root / '.trash'
         self.uploads = self.root / 'uploads'
         self.history_root = self.root / '.history'
+        self.mutex = threading.RLock()
+        self.backups = BackupManager(self)
+        with self.locked():
+            self.backups.recover()
         for p in (self.pages, self.trash, self.uploads, self.history_root):
             if p.is_symlink():
                 raise ValueError('Storage directories cannot be symlinks')
             p.mkdir(mode=0o700, exist_ok=True)
-        self.mutex = threading.RLock()
         self.bookmarks = BookmarkStore(self.root)
 
     @contextlib.contextmanager
@@ -430,99 +434,11 @@ class Handler(BaseHTTPRequestHandler):
             url = urlparse(self.path)
             args = parse_qs(url.query)
             store = self.server.store
-            if self.command == 'GET':
-                if url.path == '/api/version':
-                    data = RUNNING_VERSION
-                elif url.path == '/api/bookmarks':
-                    data = store.bookmarks.listing(query=args.get('q', [''])[0], tags=args.get('tag', []),
-                        domain=args.get('domain', [''])[0],
-                        limit=int(args.get('limit', ['40'])[0]), offset=int(args.get('offset', ['0'])[0]),
-                        sort=args.get('sort', ['newest'])[0])
-                elif url.path == '/api/bookmarks/item':
-                    data = store.bookmarks.get(args.get('id', [''])[0])
-                elif url.path in ('/api/bookmarks/tags', '/api/bookmarks/domains'):
-                    data = store.bookmarks.groups(url.path.rsplit('/', 1)[1])
-                elif url.path == '/api/pages':
-                    data = store.listing(args.get('q', [''])[0])
-                elif url.path == '/api/page':
-                    data = store.read(args.get('path', [''])[0])
-                elif url.path.startswith('/uploads/'):
-                    raw, kind = store.read_image(url.path[len('/uploads/'):])
-                    self.reply(200, raw, kind)
-                    return
-                elif url.path == '/api/history':
-                    data = store.history(args.get('path', [''])[0])
-                elif url.path == '/api/history-version':
-                    data = store.compare_version(args.get('path', [''])[0], args.get('version', [''])[0])
-                elif url.path == '/api/order':
-                    data = store.page_order()
-                elif url.path == '/api/trash':
-                    data = store.deleted()
-                elif url.path in ('/', '/app.js', '/visual-editor.js', '/bookmarks.js', '/style.css', '/favicon.png', '/favicon.ico', '/recently-edited', '/bookmarks', '/bookmarks/tags', '/bookmarks/domains', '/bookmarks/add', '/bookmarks/tools') or url.path.rstrip('/') in ('/bookmarks/add', '/bookmarks/tools') or url.path.startswith('/page/'):
-                    file = STATIC / {'/': 'index.html', '/app.js': 'app.js', '/visual-editor.js': 'visual-editor.js', '/bookmarks.js': 'bookmarks.js', '/style.css': 'style.css', '/favicon.png': 'favicon.png', '/favicon.ico': 'favicon.ico'}.get(url.path, 'index.html')
-                    kind = {'html': 'text/html', 'js': 'text/javascript', 'css': 'text/css', 'png': 'image/png', 'ico': 'image/x-icon'}[file.suffix[1:]]
-                    self.reply(200, file.read_bytes(), kind + ('; charset=utf-8' if kind.startswith('text/') else ''))
-                    return
-                elif url.path == '/api' or url.path.startswith('/api/') or url.path == '/uploads':
-                    raise Problem(404, 'Not found')
-                else:
-                    # Root-level wiki URLs serve only the app shell, never arbitrary files.
-                    name = unquote(url.path.lstrip('/').rstrip('/'))
-                    status = 200 if store.path(name).is_file() else 404
-                    self.reply(status, (STATIC / 'index.html').read_bytes(), 'text/html; charset=utf-8')
-                    return
-            elif self.command == 'POST':
-                if url.path == '/api/upload':
-                    if self.headers.get('X-Homewiki') != '1':
-                        raise Problem(403, 'A Homewiki upload request is required')
-                    content_type = self.headers.get('Content-Type', '').split(';')[0].strip().lower()
-                    if content_type not in {*IMAGE_TYPES.values(), 'image/jpg', 'application/octet-stream'}:
-                        raise Problem(415, 'Choose a PNG, JPEG, GIF, or WebP image')
-                    length = int(self.headers.get('Content-Length', '0'))
-                    if not 0 < length <= MAX_IMAGE:
-                        raise Problem(413, 'Images must be between 1 byte and 10 MB')
-                    raw = self.rfile.read(length)
-                    if len(raw) != length:
-                        raise Problem(400, 'Image upload was interrupted')
-                    self.reply(201, store.upload_image(raw))
-                    return
-                if self.headers.get('X-Homewiki') != '1' or self.headers.get('Content-Type') != 'application/json':
-                    raise Problem(403, 'A Homewiki JSON request is required')
-                length = int(self.headers.get('Content-Length', '0'))
-                if not 0 < length <= MAX_BODY:
-                    raise Problem(413, 'Request too large or empty')
-                body = json.loads(self.rfile.read(length))
-                if not isinstance(body, dict):
-                    raise Problem(400, 'Expected a JSON object')
-                name, revision = body.get('path'), body.get('revision')
-                if url.path == '/api/bookmarks/save':
-                    data = store.bookmarks.save(body)
-                elif url.path == '/api/bookmarks/title':
-                    target, _ = normalize_url(body.get('url'))
-                    if body.get('suggest_tags') is True:
-                        data = {'url': target, **store.bookmarks.preview_topics(target)}
-                    else:
-                        data = {'url': target, 'title': store.bookmarks.resolve_title(target)}
-                elif url.path == '/api/bookmarks/delete':
-                    data = store.bookmarks.remove(body.get('id'), revision)
-                elif url.path == '/api/bookmarks/extract':
-                    data = store.bookmarks.refresh_text(body.get('id'), revision)
-                elif url.path == '/api/save':
-                    data = store.save(name, body.get('content'), revision)
-                elif url.path == '/api/history-restore':
-                    data = store.restore_version(name, body.get('version'), revision)
-                elif url.path == '/api/order':
-                    data = store.reorder_pages(body.get('parent'), body.get('children'), revision)
-                elif url.path == '/api/rename':
-                    data = store.rename(name, body.get('target'), revision)
-                elif url.path == '/api/delete':
-                    data = store.delete(name, revision)
-                elif url.path == '/api/restore':
-                    data = store.restore(body.get('id'))
-                else:
-                    raise Problem(404, 'Not found')
-            self.reply(200, data)
-        except (Problem, BookmarkError) as e:
+            if url.path in ('/api/backup', '/api/backup/previous', '/api/backup/status', '/api/backup/restore'):
+                return self.backup_request(store, url.path)
+            with store.backups.regular():
+                self.serve_request(url, args, store)
+        except (Problem, BookmarkError, BackupError) as e:
             self.reply(e.status, {'error': e.message})
         except (ValueError, TypeError, UnicodeError):
             self.reply(400, {'error': 'Invalid request or non-UTF-8 Markdown file'})
@@ -532,6 +448,145 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(500, {'error': 'Bookmark database operation failed. Check storage permissions, free space, and SQLite FTS5 support.'})
         except OSError:
             self.reply(500, {'error': 'File operation failed. Check storage permissions and available disk space.'})
+
+    def backup_request(self, store, path):
+        if self.headers.get('Sec-Fetch-Site') == 'cross-site':
+            raise Problem(403, 'Cross-origin requests are blocked')
+        backup = store.backups
+        if self.command == 'POST' and path == '/api/backup/restore':
+            if self.headers.get('X-Homewiki') != '1' or self.headers.get('X-Homewiki-Restore') != 'replace':
+                raise Problem(403, 'A confirmed Homewiki restore request is required')
+            if self.headers.get('Content-Type') != 'application/zip':
+                raise Problem(415, 'Choose a Homewiki ZIP backup')
+            size = int(self.headers.get('Content-Length', '0'))
+            if not 0 < size <= MAX_ARCHIVE:
+                raise Problem(413, 'Backups must be between 1 byte and 2 GiB')
+            self.connection.settimeout(60)
+            backup.restore(self.rfile, size)
+            return self.reply(200, {'restored': True})
+        if self.command != 'GET' or path == '/api/backup/restore':
+            raise Problem(405, 'Method not allowed')
+        previous = store.root / PREVIOUS
+        if path == '/api/backup/status':
+            return self.reply(200, {'previous': previous.is_file() and not previous.is_symlink()})
+        if path == '/api/backup/previous':
+            if previous.is_symlink() or not previous.is_file():
+                raise Problem(404, 'No pre-restore backup found')
+            with previous.open('rb') as output:
+                return self.send_zip(output, 'homewiki-before-restore.zip')
+        with backup.one_transfer(), tempfile.TemporaryFile(dir=store.root) as output:
+            with backup.exclusive():
+                backup.write_zip(output)
+            output.seek(0)
+            stamp = datetime.now(timezone.utc).strftime('%Y-%m-%d-%H%M%SZ')
+            self.send_zip(output, 'homewiki-backup-' + stamp + '.zip')
+
+    def send_zip(self, output, filename):
+        try:
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/zip')
+            self.send_header('Content-Disposition', 'attachment; filename="' + filename + '"')
+            self.send_header('Content-Length', str(os.fstat(output.fileno()).st_size))
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('X-Content-Type-Options', 'nosniff')
+            self.end_headers()
+            shutil.copyfileobj(output, self.wfile, 1024 * 1024)
+        except (BrokenPipeError, ConnectionResetError):
+            self.close_connection = True
+
+    def serve_request(self, url, args, store):
+        if self.command == 'GET':
+            if url.path == '/api/version':
+                data = RUNNING_VERSION
+            elif url.path == '/api/bookmarks':
+                data = store.bookmarks.listing(query=args.get('q', [''])[0], tags=args.get('tag', []),
+                    domain=args.get('domain', [''])[0],
+                    limit=int(args.get('limit', ['40'])[0]), offset=int(args.get('offset', ['0'])[0]),
+                    sort=args.get('sort', ['newest'])[0])
+            elif url.path == '/api/bookmarks/item':
+                data = store.bookmarks.get(args.get('id', [''])[0])
+            elif url.path in ('/api/bookmarks/tags', '/api/bookmarks/domains'):
+                data = store.bookmarks.groups(url.path.rsplit('/', 1)[1])
+            elif url.path == '/api/pages':
+                data = store.listing(args.get('q', [''])[0])
+            elif url.path == '/api/page':
+                data = store.read(args.get('path', [''])[0])
+            elif url.path.startswith('/uploads/'):
+                raw, kind = store.read_image(url.path[len('/uploads/'):])
+                self.reply(200, raw, kind)
+                return
+            elif url.path == '/api/history':
+                data = store.history(args.get('path', [''])[0])
+            elif url.path == '/api/history-version':
+                data = store.compare_version(args.get('path', [''])[0], args.get('version', [''])[0])
+            elif url.path == '/api/order':
+                data = store.page_order()
+            elif url.path == '/api/trash':
+                data = store.deleted()
+            elif url.path in ('/', '/app.js', '/visual-editor.js', '/bookmarks.js', '/style.css', '/favicon.png', '/favicon.ico', '/recently-edited', '/bookmarks', '/bookmarks/tags', '/bookmarks/domains', '/bookmarks/add', '/bookmarks/tools') or url.path.rstrip('/') in ('/bookmarks/add', '/bookmarks/tools') or url.path.startswith('/page/'):
+                file = STATIC / {'/': 'index.html', '/app.js': 'app.js', '/visual-editor.js': 'visual-editor.js', '/bookmarks.js': 'bookmarks.js', '/style.css': 'style.css', '/favicon.png': 'favicon.png', '/favicon.ico': 'favicon.ico'}.get(url.path, 'index.html')
+                kind = {'html': 'text/html', 'js': 'text/javascript', 'css': 'text/css', 'png': 'image/png', 'ico': 'image/x-icon'}[file.suffix[1:]]
+                self.reply(200, file.read_bytes(), kind + ('; charset=utf-8' if kind.startswith('text/') else ''))
+                return
+            elif url.path == '/api' or url.path.startswith('/api/') or url.path == '/uploads':
+                raise Problem(404, 'Not found')
+            else:
+                # Root-level wiki URLs serve only the app shell, never arbitrary files.
+                name = unquote(url.path.lstrip('/').rstrip('/'))
+                status = 200 if store.path(name).is_file() else 404
+                self.reply(status, (STATIC / 'index.html').read_bytes(), 'text/html; charset=utf-8')
+                return
+        elif self.command == 'POST':
+            if url.path == '/api/upload':
+                if self.headers.get('X-Homewiki') != '1':
+                    raise Problem(403, 'A Homewiki upload request is required')
+                content_type = self.headers.get('Content-Type', '').split(';')[0].strip().lower()
+                if content_type not in {*IMAGE_TYPES.values(), 'image/jpg', 'application/octet-stream'}:
+                    raise Problem(415, 'Choose a PNG, JPEG, GIF, or WebP image')
+                length = int(self.headers.get('Content-Length', '0'))
+                if not 0 < length <= MAX_IMAGE:
+                    raise Problem(413, 'Images must be between 1 byte and 10 MB')
+                raw = self.rfile.read(length)
+                if len(raw) != length:
+                    raise Problem(400, 'Image upload was interrupted')
+                self.reply(201, store.upload_image(raw))
+                return
+            if self.headers.get('X-Homewiki') != '1' or self.headers.get('Content-Type') != 'application/json':
+                raise Problem(403, 'A Homewiki JSON request is required')
+            length = int(self.headers.get('Content-Length', '0'))
+            if not 0 < length <= MAX_BODY:
+                raise Problem(413, 'Request too large or empty')
+            body = json.loads(self.rfile.read(length))
+            if not isinstance(body, dict):
+                raise Problem(400, 'Expected a JSON object')
+            name, revision = body.get('path'), body.get('revision')
+            if url.path == '/api/bookmarks/save':
+                data = store.bookmarks.save(body)
+            elif url.path == '/api/bookmarks/title':
+                target, _ = normalize_url(body.get('url'))
+                if body.get('suggest_tags') is True:
+                    data = {'url': target, **store.bookmarks.preview_topics(target)}
+                else:
+                    data = {'url': target, 'title': store.bookmarks.resolve_title(target)}
+            elif url.path == '/api/bookmarks/delete':
+                data = store.bookmarks.remove(body.get('id'), revision)
+            elif url.path == '/api/bookmarks/extract':
+                data = store.bookmarks.refresh_text(body.get('id'), revision)
+            elif url.path == '/api/save':
+                data = store.save(name, body.get('content'), revision)
+            elif url.path == '/api/history-restore':
+                data = store.restore_version(name, body.get('version'), revision)
+            elif url.path == '/api/order':
+                data = store.reorder_pages(body.get('parent'), body.get('children'), revision)
+            elif url.path == '/api/rename':
+                data = store.rename(name, body.get('target'), revision)
+            elif url.path == '/api/delete':
+                data = store.delete(name, revision)
+            elif url.path == '/api/restore':
+                data = store.restore(body.get('id'))
+            else:
+                raise Problem(404, 'Not found')
+        self.reply(200, data)
 
     do_GET = dispatch
     do_POST = dispatch

@@ -266,6 +266,14 @@ Saves flush a temporary file and atomically replace the page. A cross-process ad
 
 Unsaved edits go immediately into localStorage with separate keys for tabs. Revisiting a page or reloading recovers a draft. If browser storage fails, the editor warns and prompts before leaving with unsaved work. Browser drafts belong to the origin, including its port; clearing site data removes them. They are not server backups.
 
+### Backup and restore in Homewiki
+
+Open **Backup & restore** at the bottom of the sidebar. **Download backup ZIP** saves your Markdown pages, uploaded images, page history, trash, sidebar order, and bookmarks in one file. The ZIP contains saved server data. Browser drafts and appearance preferences live in each browser.
+
+To restore, select a Homewiki backup ZIP, check **Replace my current saved data**, then choose **Restore backup**. Homewiki checks the ZIP first and keeps a separate ZIP of the data it replaces. To retrieve that snapshot, reopen the dialog and choose **Download ZIP from before the last restore**. Download that snapshot before another restore if you want to keep it.
+
+The ZIP limit is 2 GiB uploaded or downloaded, with up to 8 GiB expanded and 50,000 entries. Allow space in the data volume for the ZIP, expanded files, and the pre-restore snapshot. Pause direct edits to the data folder while Homewiki creates or restores a backup.
+
 Back up the complete server-side data folder, including `.trash`, `.history`, and hidden files, with edits paused or the app stopped. For Docker, back up the volume or bind mount and preserve ownership (UID/GID 10001). Keep data when replacing the container. A volume copy while the container is running but edits are paused can be made to a fresh destination with:
 
 ```sh
