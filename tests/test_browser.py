@@ -1273,6 +1273,45 @@ After the table.
         expect(page.locator('#content img')).to_be_visible()
         expect(page.locator('#content li').get_by_role('link', name='Games/Completed games', exact=True)).to_have_attribute('href', '/Games/Completed%20games')
 
+    def test_trash_permanent_delete_and_empty_require_confirmation(self):
+        page = self.page
+
+        def put_in_trash(path):
+            saved = self.store.save(path, '# ' + path)
+            return self.store.delete(path, saved['revision'])['id']
+
+        first = put_in_trash('One deleted page')
+        second = put_in_trash('Another deleted page')
+        page.locator('#settings-open').click()
+        page.locator('#trash-open').click()
+        one = page.get_by_role('button', name='Delete permanently: One deleted page', exact=True)
+        one.click()
+        expect(page.locator('#modal-title')).to_have_text('Delete page permanently?')
+        page.get_by_role('button', name='Cancel', exact=True).click()
+        expect(one).to_be_visible()
+        self.assertEqual({item['id'] for item in self.store.deleted()}, {first, second})
+        one.click()
+        page.get_by_role('button', name='Delete permanently', exact=True).click()
+        expect(one).to_have_count(0)
+        expect(page.get_by_text('↶ Another deleted page', exact=True)).to_be_visible()
+        self.assertEqual([item['id'] for item in self.store.deleted()], [second])
+        self.assertFalse((self.store.trash / first).exists())
+        self.assertTrue(self.store.history_dir('One deleted page').is_dir())
+
+        empty = page.get_by_role('button', name='Empty trash', exact=True)
+        empty.click()
+        expect(page.locator('#modal-title')).to_have_text('Empty trash?')
+        newly_deleted = put_in_trash('Deleted in another tab')
+        empty.click()
+        expect(page.get_by_role('alert')).to_contain_text('The trash changed')
+        self.assertEqual({item['id'] for item in self.store.deleted()}, {second, newly_deleted})
+        empty.click()
+        expect(page.locator('#modal-body')).to_contain_text('Permanently remove 2 items')
+        empty.click()
+        expect(page.get_by_text('Nothing in the trash.', exact=True)).to_be_visible()
+        self.assertEqual(self.store.deleted(), [])
+        self.assertTrue(self.store.path('Home').is_file())
+
     def test_download_and_confirm_restore_of_a_backup_zip(self):
         page = self.page
         self.store.bookmarks.save({'url':'https://example.com/backup', 'title':'Backup test', 'tags':['saved']})

@@ -736,7 +736,91 @@ function backupDialog() {
 }
 $('backup-open').onclick = backupDialog;
 
-$('trash-open').onclick=async()=>{const body=modal('Recently deleted');body.innerHTML='<p>Deleted Markdown files are kept until you remove them from the data folder. Select a page to restore it.</p>';try{const pages=await api('trash');if(!pages.length){body.innerHTML+='<div class="empty">Nothing in the trash. A clean slate.</div>';return;}for(const page of pages){const b=document.createElement('button');b.className='result';b.innerHTML='<strong>↶ '+esc(page.path)+'</strong><small>Deleted '+esc(new Date(page.deleted).toLocaleString())+' · Restore page</small>';b.onclick=async()=>{b.disabled=true;try{const restored=await api('restore',{id:page.id});await refreshPages();closeModal();go(restored.path);toast('Page restored');}catch(error){errorInto(body,error);b.disabled=false;}};body.append(b);}}catch(error){errorInto(body,error);}};
+async function trashDialog(message = '') {
+  const body = modal('Recently deleted');
+  const view = bmElement('div');
+  view.textContent = 'Loading deleted pages…';
+  body.append(view);
+  try {
+    const pages = await api('trash');
+    if (!view.isConnected || !$('modal').open) return;
+    view.replaceChildren();
+    if (message) errorInto(view, new Error(message));
+    if (!pages.length) {
+      view.append(bmElement('p', 'empty', 'Nothing in the trash.'));
+      return;
+    }
+
+    const empty = bmElement('button', 'outline-button danger', 'Empty trash');
+    empty.type = 'button';
+    empty.onclick = () => confirmTrashDeletion(null, pages);
+    const toolbar = bmElement('div', 'trash-toolbar');
+    toolbar.append(empty);
+    view.append(toolbar);
+
+    for (const page of pages) {
+      const row = bmElement('div', 'trash-row');
+      const restore = bmElement('button', 'result');
+      restore.type = 'button';
+      restore.append(bmElement('strong', '', '↶ ' + page.path),
+        bmElement('small', '', 'Deleted ' + editDate(page.deleted) + ' · Restore page'));
+      restore.onclick = async () => {
+        restore.disabled = remove.disabled = empty.disabled = true;
+        try {
+          const restored = await api('restore', {id:page.id});
+          await refreshPages();
+          closeModal();
+          go(restored.path);
+          toast('Page restored');
+        } catch (error) {
+          errorInto(view, error);
+          restore.disabled = remove.disabled = empty.disabled = false;
+        }
+      };
+
+      const remove = bmElement('button', 'subtle-button danger', 'Delete permanently');
+      remove.type = 'button';
+      remove.setAttribute('aria-label', 'Delete permanently: ' + page.path);
+      remove.onclick = () => confirmTrashDeletion(page, pages);
+      row.append(restore, remove);
+      view.append(row);
+    }
+  } catch (error) {
+    view.replaceChildren();
+    errorInto(view, error);
+  }
+}
+
+function confirmTrashDeletion(page, pages) {
+  const body = modal(page ? 'Delete page permanently?' : 'Empty trash?');
+  const view = bmElement('div');
+  const count = pages.length;
+  const description = page
+    ? 'Remove “' + page.path + '” from the trash?'
+    : 'Permanently remove ' + count + ' ' + (count === 1 ? 'item' : 'items') + ' from the trash?';
+  view.append(bmElement('p', '', description + ' Page history and existing backups are kept.'));
+  const actions = bmElement('div', 'dialog-buttons');
+  const cancel = bmElement('button', 'subtle-button', 'Cancel');
+  const confirm = bmElement('button', 'outline-button danger', page ? 'Delete permanently' : 'Empty trash');
+  cancel.type = confirm.type = 'button';
+  cancel.onclick = () => trashDialog();
+  confirm.onclick = async () => {
+    cancel.disabled = confirm.disabled = true;
+    try {
+      await (page ? api('trash/delete', {id:page.id}) : api('trash/empty', {ids:pages.map(item => item.id)}));
+      if (view.isConnected && $('modal').open) trashDialog();
+      toast(page ? 'Deleted from trash' : 'Trash emptied');
+    } catch (error) {
+      if (view.isConnected && $('modal').open) trashDialog(error.message);
+    }
+  };
+  actions.append(cancel, confirm);
+  view.append(actions);
+  body.append(view);
+  cancel.focus();
+}
+
+$('trash-open').onclick = () => trashDialog();
 window.addEventListener('beforeunload',e=>{if(pendingUploads.size||(state.editing&&state.dirty)){preserveDraft();e.preventDefault();e.returnValue='';}});
 window.addEventListener('storage',e=>{if(e.key?.startsWith(draftPrefix(state.page?.path))&&e.key!==draftKey(state.page?.path)&&state.editing&&e.newValue){notice('Another tab is editing this page. Each tab keeps its own draft; saving checks for conflicts.');}});
 document.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();searchDialog();}if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'){e.preventDefault();save();}});

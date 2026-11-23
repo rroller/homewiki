@@ -363,25 +363,65 @@ class Store:
             path.rename(item / 'page.md')
             return {'id': token}
 
+    @staticmethod
+    def valid_trash_id(token):
+        return isinstance(token, str) and re.fullmatch(r'[0-9a-f]{32}', token) is not None
+
+    def trash_info(self, item):
+        page = item / 'page.md'
+        metadata = item / 'metadata.json'
+        if item.is_symlink() or page.is_symlink() or metadata.is_symlink() or not page.is_file():
+            return None
+        try:
+            info = json.loads(metadata.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            return None
+        if (isinstance(info, dict) and info.get('id') == item.name
+                and all(isinstance(info.get(key), str) for key in ('path', 'deleted'))):
+            return info
+        return None
+
+    def trash_entries(self):
+        if self.trash.is_symlink():
+            raise Problem(400, 'Symlinks are not supported')
+        return [info for item in self.trash.iterdir()
+                if self.valid_trash_id(item.name) and (info := self.trash_info(item)) is not None]
+
     def deleted(self):
-        result = []
-        for item in self.trash.iterdir():
-            if item.is_symlink() or not (item / 'page.md').is_file():
-                continue
-            try:
-                result.append(json.loads((item / 'metadata.json').read_text()))
-            except (OSError, ValueError):
-                pass
-        return sorted(result, key=lambda p: p['deleted'], reverse=True)
+        with self.locked():
+            return sorted(self.trash_entries(), key=lambda info: (info['deleted'], info['id']), reverse=True)
+
+    def trash_item(self, token):
+        if not self.valid_trash_id(token):
+            raise Problem(400, 'Invalid trash ID')
+        if self.trash.is_symlink():
+            raise Problem(400, 'Symlinks are not supported')
+        item = self.trash / token
+        info = self.trash_info(item)
+        if info is None:
+            raise Problem(404, 'Deleted page not found')
+        return item, info
+
+    def delete_from_trash(self, token):
+        with self.locked():
+            item, _ = self.trash_item(token)
+            shutil.rmtree(item)
+            return {'deleted': 1}
+
+    def empty_trash(self, tokens):
+        if not isinstance(tokens, list) or not all(self.valid_trash_id(token) for token in tokens):
+            raise Problem(400, 'Invalid trash selection')
+        with self.locked():
+            current = {info['id'] for info in self.trash_entries()}
+            if current != set(tokens):
+                raise Problem(409, 'The trash changed. Review the current items before trying again.')
+            for token in sorted(current):
+                shutil.rmtree(self.trash / token)
+            return {'deleted': len(current)}
 
     def restore(self, token):
-        if not isinstance(token, str) or len(token) != 32 or any(c not in '0123456789abcdef' for c in token):
-            raise Problem(400, 'Invalid trash ID')
         with self.locked():
-            item = self.trash / token
-            if item.is_symlink() or not (item / 'page.md').exists():
-                raise Problem(404, 'Deleted page not found')
-            info = json.loads((item / 'metadata.json').read_text())
+            item, info = self.trash_item(token)
             dst = self.path(info['path'])
             if dst.exists():
                 raise Problem(409, 'A page already uses this path. Rename it before restoring.')
@@ -584,6 +624,10 @@ class Handler(BaseHTTPRequestHandler):
                 data = store.delete(name, revision)
             elif url.path == '/api/restore':
                 data = store.restore(body.get('id'))
+            elif url.path == '/api/trash/delete':
+                data = store.delete_from_trash(body.get('id'))
+            elif url.path == '/api/trash/empty':
+                data = store.empty_trash(body.get('ids'))
             else:
                 raise Problem(404, 'Not found')
         self.reply(200, data)
