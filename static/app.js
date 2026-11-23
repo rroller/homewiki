@@ -359,19 +359,31 @@ function navigateRecent(){
   if(innerWidth<721)sidebar(true);window.scrollTo(0,0);
   refreshPages().catch(error=>{if(turn===navigating)notice(error.message);});
 }
-function navigateSettings() {
+function navigateSettings(browserTools) {
   leaveBookmarks();
   preserveDraft();
   ++navigating;
   Object.assign(state, {loading:false, recent:false, page:null, editing:false, dirty:false});
   notice('');
-  $('page-title').textContent = 'Settings';
-  document.title = 'Settings · Homewiki';
+  const title = browserTools ? 'Save from your browser' : 'Settings';
+  $('page-title').textContent = title;
+  document.title = title + ' · Homewiki';
   renderBreadcrumb('Settings');
+  if (browserTools) {
+    const current = bmElement('span', '', title);
+    current.setAttribute('aria-current', 'page');
+    $('breadcrumb').replaceChildren(bookmarkLink('Settings', '/settings'), bmElement('span', 'breadcrumb-separator', '/'), current);
+  }
   for (const id of ['reader', 'editor', 'edit-page', 'more', 'actions', 'page-footer']) $(id).hidden = true;
   $('recently-edited').removeAttribute('aria-current');
-  $('settings-open').setAttribute('aria-current', 'page');
-  $('settings-view').hidden = false;
+  for (const id of ['settings-open', 'tools-open']) $(id).setAttribute('aria-current', browserTools ? 'location' : 'page');
+  $('settings-view').hidden = browserTools;
+  const view = $('browser-tools-view');
+  view.hidden = !browserTools;
+  if (browserTools) {
+    view.replaceChildren();
+    renderBookmarkTools(view);
+  }
   renderTree();
   if (innerWidth < 721) sidebar(true);
   window.scrollTo(0, 0);
@@ -407,16 +419,18 @@ async function navigate(path){
   }catch(error){if(turn!==navigating)return;state.loading=false;state.page=null;state.editing=false;state.dirty=false;$('reader').hidden=false;$('editor').hidden=true;$('edit-page').hidden=true;$('page-title').textContent=path||'Page not found';renderBreadcrumb(path);$('content').textContent=error.message;$('word-count').textContent='';$('page-footer').hidden=true;$('more').hidden=true;notice(error.status===404?'This page does not exist yet.':'Unable to load this page.',error.status===404?'Create page':null,()=>createDialog(path));renderTree();}
 }
 function route(){
-  const bookmarkPath=location.pathname.replace(/\/+$/,'');
-  if (bookmarkPath === '/settings' && !location.hash.startsWith('#/page/')) {
-    if (location.pathname !== bookmarkPath) history.replaceState(null, '', bookmarkPath + location.search + location.hash);
-    navigateSettings();
+  const pathname=location.pathname.replace(/\/+$/,'');
+  if (['/settings', '/settings/browser', '/bookmarks/tools'].includes(pathname) && !location.hash.startsWith('#/page/')) {
+    const target = pathname === '/bookmarks/tools' ? '/settings/browser' : pathname;
+    if (location.pathname !== target) history.replaceState(null, '', target + location.search + location.hash);
+    navigateSettings(target === '/settings/browser');
     return;
   }
   $('settings-view').hidden = true;
-  $('settings-open').removeAttribute('aria-current');
-  if(['/bookmarks','/bookmarks/tags','/bookmarks/domains','/bookmarks/add','/bookmarks/tools'].includes(bookmarkPath)&&!location.hash.startsWith('#/page/')){
-    if(bookmarkPath!==location.pathname)history.replaceState(null,'',bookmarkPath+location.search+location.hash);
+  $('browser-tools-view').hidden = true;
+  for (const id of ['settings-open', 'tools-open']) $(id).removeAttribute('aria-current');
+  if(['/bookmarks','/bookmarks/tags','/bookmarks/domains','/bookmarks/add'].includes(pathname)&&!location.hash.startsWith('#/page/')){
+    if(pathname!==location.pathname)history.replaceState(null,'',pathname+location.search+location.hash);
     navigateBookmarks();return;
   }
   if(location.pathname==='/recently-edited'&&!location.hash.startsWith('#/page/')){navigateRecent();return;}
@@ -438,7 +452,7 @@ document.addEventListener('click',event=>{
   const link=event.target.closest('a[href]');if(!link||link.hasAttribute('download')||(link.target&&link.target!=='_self'))return;
   const url=new URL(link.href,location.href);
   const root=decodeURIComponent(url.pathname.split('/')[1]||'');
-  const wikiPath=!reservedPageRoots.has(root)||url.pathname.startsWith('/page/')||url.pathname==='/recently-edited'||url.pathname==='/settings'||url.pathname==='/bookmarks'||url.pathname.startsWith('/bookmarks/');
+  const wikiPath=!reservedPageRoots.has(root)||url.pathname.startsWith('/page/')||url.pathname==='/recently-edited'||url.pathname==='/settings'||url.pathname==='/settings/browser'||url.pathname==='/bookmarks'||url.pathname.startsWith('/bookmarks/');
   const localAnchor=url.pathname===location.pathname&&url.hash&&!url.hash.startsWith('#/page/');
   if(url.origin===location.origin&&wikiPath&&!localAnchor){
     event.preventDefault();history.pushState(null,'',url.pathname+url.search+url.hash);route();

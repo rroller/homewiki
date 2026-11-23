@@ -12,7 +12,7 @@ function bookmarkLink(label,url,className=''){
   const link=bmElement('a',className,label);link.href=url;return link;
 }
 function leaveBookmarks(){
-  state.bookmarks=false;$('bookmarks-view').hidden=true;$('bookmarks-open').removeAttribute('aria-current');$('tools-open').removeAttribute('aria-current');
+  state.bookmarks=false;$('bookmarks-view').hidden=true;$('bookmarks-open').removeAttribute('aria-current');
 }
 function navigateBookmarks(){
   clearTimeout(bookmarkSearchTimer);preserveDraft();const turn=++navigating;
@@ -20,28 +20,25 @@ function navigateBookmarks(){
   notice('');$('reader').hidden=true;$('editor').hidden=true;$('edit-page').hidden=true;$('more').hidden=true;$('actions').hidden=true;$('page-footer').hidden=true;
   $('recently-edited').removeAttribute('aria-current');$('bookmarks-open').setAttribute('aria-current','page');
   const view=$('bookmarks-view');view.hidden=false;view.replaceChildren();
-  const mode=location.pathname==='/bookmarks/add'?'add':location.pathname==='/bookmarks/tools'?'tools':location.pathname==='/bookmarks/tags'?'tags':location.pathname==='/bookmarks/domains'?'domains':'links';
-  if(mode==='tools')$('tools-open').setAttribute('aria-current','page');else $('tools-open').removeAttribute('aria-current');
+  const mode=location.pathname==='/bookmarks/add'?'add':location.pathname==='/bookmarks/tags'?'tags':location.pathname==='/bookmarks/domains'?'domains':'links';
   const params=new URLSearchParams(location.search);
   const filter={q:params.get('q')||'',tags:params.getAll('tag'),domain:params.get('domain')||'',sort:params.get('sort')||'newest',page:Math.max(0,Math.min(2500,Math.trunc(Number(params.get('page'))||0)))};
-  const heading=mode==='add'?'Add bookmark':mode==='tools'?'Save from your browser':mode==='tags'?'Bookmark tags':mode==='domains'?'Bookmark domains':'Bookmarks';
+  const heading=mode==='add'?'Add bookmark':mode==='tags'?'Bookmark tags':mode==='domains'?'Bookmark domains':'Bookmarks';
   $('page-title').textContent=heading;document.title=heading+' · Homewiki';renderBreadcrumb('Bookmarks');
   if(mode!=='links'){
-    const crumb=$('breadcrumb');crumb.replaceChildren(bookmarkLink('Bookmarks','/bookmarks'),bmElement('span','breadcrumb-separator','/'),bmElement('span','',mode==='add'?'Add bookmark':mode==='tools'?'Save from your browser':mode==='tags'?'Tags':'Domains'));
+    const crumb=$('breadcrumb');crumb.replaceChildren(bookmarkLink('Bookmarks','/bookmarks'),bmElement('span','breadcrumb-separator','/'),bmElement('span','',mode==='add'?'Add bookmark':mode==='tags'?'Tags':'Domains'));
   }
   const toolbar=bmElement('div','bookmark-toolbar'),nav=bmElement('nav','bookmark-nav');nav.setAttribute('aria-label','Bookmark library');
-  for(const [label,url,selected] of [['Recent','/bookmarks',mode==='links'],['Tags','/bookmarks/tags',mode==='tags'],['Domains','/bookmarks/domains',mode==='domains'],['Save from browser','/bookmarks/tools',mode==='tools']]){
+  for(const [label,url,selected] of [['Recent','/bookmarks',mode==='links'],['Tags','/bookmarks/tags',mode==='tags'],['Domains','/bookmarks/domains',mode==='domains']]){
     const link=bookmarkLink(label,url);if(selected)link.setAttribute('aria-current','page');nav.append(link);
   }
   toolbar.append(nav);
   if(mode!=='add'){const add=bmElement('button','primary-button','Add bookmark');add.id='add-bookmark';add.onclick=()=>bookmarkForm();toolbar.append(add);}
   view.append(toolbar);
-  if(mode==='add'||mode==='tools'){
-    if(mode==='add'){
-      const intro=bmElement('p','bookmark-capture-intro','Review the link, add any tags, then save it to your library.');view.append(intro);
-      const mount=bmElement('div','bookmark-capture-form');view.append(mount);
-      bookmarkForm(null,{mount,prefill:bookmarkCaptureValues(params)});
-    }else renderBookmarkTools(view);
+  if(mode==='add'){
+    const intro=bmElement('p','bookmark-capture-intro','Review the link, add any tags, then save it to your library.');view.append(intro);
+    const mount=bmElement('div','bookmark-capture-form');view.append(mount);
+    bookmarkForm(null,{mount,prefill:bookmarkCaptureValues(params)});
     renderTree();if(innerWidth<721)sidebar(true);window.scrollTo(0,0);return;
   }
   const results=bmElement('div','bookmark-results');results.setAttribute('aria-live','polite');

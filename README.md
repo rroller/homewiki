@@ -123,7 +123,7 @@ Docker deployments can set `HOMEWIKI_ALLOWED_HOSTS` to the permitted IP/hostname
 
 ## Use the wiki
 
-The sidebar toolbar contains New page (pencil), Recently edited (clock), Search (magnifying glass), Bookmark tools (wrench), and the sidebar toggle. The tools icon opens the Safari bookmarklet setup and capture address. Open **Settings** at the bottom of the sidebar for appearance, deleted pages, and backups. Only top-level page groups have collapse arrows; their nested pages stay expanded when the group is open. Drag a page or group above/below a sibling to set its order, or focus it and press Alt+↑/↓. Ordering is saved on the server for all browsers and never changes page paths. New pages appear after ordered siblings; deleted entries are ignored.
+The sidebar toolbar contains New page (pencil), Recently edited (clock), Search (magnifying glass), Settings (wrench), and the sidebar toggle. Open **Settings** from the wrench or the footer for appearance, deleted pages, backups, and browser bookmark setup. Only top-level page groups have collapse arrows; their nested pages stay expanded when the group is open. Drag a page or group above/below a sibling to set its order, or focus it and press Alt+↑/↓. Ordering is saved on the server for all browsers and never changes page paths. New pages appear after ordered siblings; deleted entries are ignored.
 
 Use the upper-right **••• → New subpage** menu to create a child of the current page. Enter its name; Homewiki adds the parent path automatically. Unsaved work on the parent stays in its browser draft.
 
@@ -194,7 +194,7 @@ Bookmark data, tags, and the full-text index live in bookmarks.sqlite3 under the
 
 ## Save from Safari, a bookmarklet, or an extension
 
-Open **Bookmarks → Save from browser** (the /bookmarks/tools page) using the same Homewiki address you normally use on your phone. The page generates a **Save to Homewiki** bookmarklet for that address.
+Open **Settings → Open browser setup** (the /settings/browser page) using the same Homewiki address you normally use on your phone. The page generates a **Save to Homewiki** bookmarklet for that address.
 
 On iPhone Safari:
 

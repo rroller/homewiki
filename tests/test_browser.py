@@ -593,7 +593,7 @@ class BrowserTests(unittest.TestCase):
 
     def test_bookmarklet_captures_current_page_title_and_encoded_url(self):
         p=self.page
-        p.goto(self.url+'/bookmarks/tools')
+        p.goto(self.url+'/settings/browser')
         expect(p.locator('#page-title')).to_have_text('Save from your browser')
         code=p.locator('#bookmarklet-code').input_value()
         self.assertTrue(code.startswith('javascript:void('))
@@ -624,12 +624,12 @@ class BrowserTests(unittest.TestCase):
     def test_capture_tools_have_mobile_setup_and_do_not_run_on_install_click(self):
         p=self.page
         p.goto(self.url+'/bookmarks/tools/')
-        expect(p).to_have_url(self.url+'/bookmarks/tools')
-        expect(p.locator('#bookmarks-view')).to_contain_text('iPhone Safari setup')
+        expect(p).to_have_url(self.url+'/settings/browser')
+        expect(p.locator('#browser-tools-view')).to_contain_text('iPhone Safari setup')
         expect(p.locator('#bookmark-capture-address')).to_have_value(self.url+'/bookmarks/add')
         expect(p.locator('#bookmarklet-code')).to_have_attribute('readonly','')
         p.locator('#install-bookmarklet').click()
-        expect(p).to_have_url(self.url+'/bookmarks/tools')
+        expect(p).to_have_url(self.url+'/settings/browser')
         expect(p.locator('#toast')).to_contain_text('Drag this')
         p.locator('#copy-bookmarklet').click()
         expect(p.locator('#toast')).to_be_visible()
@@ -1014,14 +1014,20 @@ After the table.
         expect(toolbar.get_by_role('link',name='Recently edited',exact=True)).to_be_visible()
         self.assertEqual(p.locator('#new-page').inner_text(),'')
         self.assertEqual(p.locator('#recently-edited').inner_text(),'')
-        expect(toolbar.get_by_role('link',name='Bookmark tools',exact=True)).to_be_visible()
+        expect(toolbar.get_by_role('link',name='Settings',exact=True)).to_be_visible()
         self.assertEqual(p.locator('#tools-open').inner_text(),'')
         p.locator('#new-page').click();expect(p.locator('#modal-title')).to_have_text('Create a page');p.locator('#modal-close').click()
         p.locator('#recently-edited').click();expect(p.locator('#page-title')).to_have_text('Recently edited')
         expect(p.locator('#recently-edited')).to_have_attribute('aria-current','page')
         p.locator('#tools-open').click()
-        expect(p.locator('#page-title')).to_have_text('Save from your browser')
+        expect(p).to_have_url(self.url+'/settings')
         expect(p.locator('#tools-open')).to_have_attribute('aria-current','page')
+        p.get_by_role('link',name='Open browser setup',exact=True).click()
+        expect(p.locator('#page-title')).to_have_text('Save from your browser')
+        expect(p).to_have_url(self.url+'/settings/browser')
+        p.locator('#breadcrumb').get_by_role('link',name='Settings',exact=True).click()
+        expect(p.locator('#settings-view')).to_be_visible()
+        expect(p.locator('#browser-tools-view')).to_be_hidden()
         p.locator('#brand-home').click()
         expect(p.locator('#tools-open')).not_to_have_attribute('aria-current','page')
         for width in [1440,1000,800,390]:
