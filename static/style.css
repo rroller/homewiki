@@ -96,3 +96,6 @@ aside{width:280px;padding:24px 12px 0;background:#fafafa}.brand{font-size:22px;f
 .settings-row:first-child { padding-top: 0; }
 .settings-row h2 { margin: 0 0 5px; font-size: 16px; font-weight: 600; }
 .settings-row p { margin: 0; color: var(--muted); line-height: 1.6; }
+
+.settings-row a.outline-button { color: var(--text); text-decoration: none; }
+.sidebar-tools a[aria-current=location], .settings-link[aria-current=location] { color: var(--text); }

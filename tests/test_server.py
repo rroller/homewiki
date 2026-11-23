@@ -443,7 +443,7 @@ class HTTPTests(unittest.TestCase):
 
     def test_bookmark_capture_routes_are_read_only_shells(self):
         before=self.server.store.bookmarks.listing()['total']
-        for route in ['/bookmarks/add','/bookmarks/tools','/bookmarks/add/','/bookmarks/tools/','/bookmarks/add?url=https%3A%2F%2Fexample.com&save=1']:
+        for route in ['/bookmarks/add','/bookmarks/tools','/bookmarks/add/','/bookmarks/tools/','/settings/browser','/settings/browser/','/bookmarks/add?url=https%3A%2F%2Fexample.com&save=1']:
             status,body,headers=self.request(route)
             self.assertEqual(status,200)
             self.assertIn(b'<!doctype html>',body)
