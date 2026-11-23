@@ -141,7 +141,7 @@ Page URLs use `/Home` or `/Games/Completed%20games`, with no `/page/` prefix. Di
 
 Ctrl/Cmd+K opens search; Ctrl/Cmd+S saves an edit. Closing the editor retains its browser draft; Discard draft removes it. Rename/move changes only the selected Markdown file. Children and links to its old path remain unchanged, and existing destinations are never replaced.
 
-Delete moves a page into Recently deleted. Children remain accessible. Restore it through **Settings → Recently deleted**; if the original path is occupied, move that replacement first. Trash has no automatic expiry or permanent-delete UI.
+Delete moves a page into Recently deleted. Children remain accessible. Restore it through **Settings → Recently deleted**; if the original path is occupied, move that replacement first. Use **Delete permanently** for one entry or **Empty trash** for all listed entries. Both actions require confirmation and remove only the trash copies. Page history and existing backups are kept. Trash has no automatic expiry.
 
 The footer uses the Markdown file's modification time for its last-edit date, displayed in the browser's local time zone. Recently edited (`/recently-edited`) is a generated index ordered newest first. It includes external file edits, excludes deleted pages, and is not itself an editable Markdown file. Renaming or restoring a page preserves its content edit date.
 

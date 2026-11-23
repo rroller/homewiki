@@ -99,3 +99,8 @@ aside{width:280px;padding:24px 12px 0;background:#fafafa}.brand{font-size:22px;f
 
 .settings-row a.outline-button { color: var(--text); text-decoration: none; }
 .sidebar-tools a[aria-current=location], .settings-link[aria-current=location] { color: var(--text); }
+
+.trash-toolbar { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.trash-row { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--border); }
+.trash-row .result { flex: 1; min-width: 0; border-bottom: 0; }
+.trash-row .subtle-button { flex: none; }
