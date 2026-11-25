@@ -13,7 +13,7 @@ import shutil
 import sqlite3
 import subprocess
 from bookmarks import BookmarkStore, BookmarkError, normalize_url
-from backup import BackupError, BackupManager, MAX_ARCHIVE, PREVIOUS
+from backup import BackupError, BackupManager, MAX_ARCHIVE, PREVIOUS, START_PAGE_FILE
 import tempfile
 import threading
 import uuid
@@ -155,6 +155,26 @@ class Store:
                 continue
             result.append({'path': name, 'excerpt': ' '.join(content.split())[:180], 'modified': page['modified']})
         return result
+
+    def start_page(self):
+        setting = self.root / START_PAGE_FILE
+        if setting.is_symlink():
+            raise Problem(400, 'Symlinks are not supported')
+        try:
+            with setting.open(encoding='utf-8') as file:
+                target = file.read(401)
+            self.path(target)
+        except (FileNotFoundError, UnicodeError, Problem):
+            target = 'Home'
+        return {'path': target}
+
+    def set_start_page(self, target):
+        with self.locked():
+            page = self.path(target)
+            if target != 'Home' and not page.is_file():
+                raise Problem(404, 'Choose an existing wiki page')
+            self.atomic(self.root / START_PAGE_FILE, target)
+        return {'path': target}
 
     def page_order(self):
         path = self.root / '.sidebar-order.json'
@@ -561,6 +581,8 @@ class Handler(BaseHTTPRequestHandler):
                 data = store.compare_version(args.get('path', [''])[0], args.get('version', [''])[0])
             elif url.path == '/api/order':
                 data = store.page_order()
+            elif url.path == '/api/start-page':
+                data = store.start_page()
             elif url.path == '/api/trash':
                 data = store.deleted()
             elif url.path in ('/', '/app.js', '/visual-editor.js', '/bookmarks.js', '/style.css', '/favicon.png', '/favicon.ico', '/recently-edited', '/bookmarks', '/bookmarks/tags', '/bookmarks/domains', '/bookmarks/add', '/bookmarks/tools') or url.path.rstrip('/') in ('/bookmarks/add', '/bookmarks/tools', '/settings', '/settings/browser') or url.path.startswith('/page/'):
@@ -618,6 +640,8 @@ class Handler(BaseHTTPRequestHandler):
                 data = store.restore_version(name, body.get('version'), revision)
             elif url.path == '/api/order':
                 data = store.reorder_pages(body.get('parent'), body.get('children'), revision)
+            elif url.path == '/api/start-page':
+                data = store.set_start_page(name)
             elif url.path == '/api/rename':
                 data = store.rename(name, body.get('target'), revision)
             elif url.path == '/api/delete':

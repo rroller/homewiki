@@ -31,6 +31,7 @@ class BackupTests(unittest.TestCase):
         saved = self.store.save('Notes/Nested', '# Saved', first['revision'])
         trash = self.store.delete('Old', self.store.save('Old', '# Old')['revision'])
         order = self.store.reorder_pages('', ['Notes'], None)
+        self.store.set_start_page('Notes/Nested')
         image = self.store.upload_image(test_server.PNG)
         with patch('bookmarks.fetch_page_text', return_value={'title': 'Article', 'text': 'A searchable orchid'}):
             bookmark = self.store.bookmarks.save({
@@ -39,12 +40,14 @@ class BackupTests(unittest.TestCase):
         snapshot = self.snapshot()
         self.store.save('Notes/Nested', '# Later', saved['revision'])
         self.store.save('Only later', '# Later')
+        self.store.set_start_page('Only later')
         self.store.bookmarks.remove(bookmark['id'], bookmark['revision'])
         self.restore(snapshot)
         self.assertEqual(self.store.read('Notes/Nested'), saved)
         self.assertEqual(self.store.history('Notes/Nested')['versions'][0]['revision'], first['revision'])
         self.assertEqual(self.store.deleted()[0]['id'], trash['id'])
         self.assertEqual(self.store.page_order(), order)
+        self.assertEqual(self.store.start_page(), {'path': 'Notes/Nested'})
         self.assertEqual(self.store.read_image(image['url'].split('/')[-1])[0], test_server.PNG)
         self.assertEqual(self.store.bookmarks.get(bookmark['id']), bookmark)
         self.assertEqual(self.store.bookmarks.listing(query='orchid', tags=['gardening'])['total'], 1)

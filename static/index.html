@@ -22,6 +22,14 @@
 <div id="reader"><article id="content" class="markdown"></article><div id="page-footer" class="page-footer"><time id="last-edited"></time><span id="word-count"></span></div></div>
 <section id="bookmarks-view" hidden aria-label="Bookmark library"></section>
 <section id="settings-view" hidden aria-label="Settings">
+  <section class="settings-row" aria-labelledby="settings-start-heading">
+    <div><h2 id="settings-start-heading">Start page</h2><p>Choose which page opens at your wiki’s base address.</p></div>
+    <form id="start-page-form">
+      <select id="start-page-choice" aria-labelledby="settings-start-heading" disabled><option value="Home">Home</option></select>
+      <button type="submit" class="outline-button" disabled>Save start page</button>
+      <p id="start-page-status" role="status"></p>
+    </form>
+  </section>
   <section class="settings-row" aria-labelledby="settings-appearance">
     <div><h2 id="settings-appearance">Appearance</h2><p>Choose a theme for this browser.</p></div>
     <button id="theme-toggle" class="outline-button" type="button"><span id="theme-label">Dark appearance</span></button>

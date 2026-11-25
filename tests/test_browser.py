@@ -1343,6 +1343,30 @@ After the table.
         with zipfile.ZipFile(previous.value.path()) as saved:
             self.assertEqual(saved.read('pages/After backup.md'),b'# After backup')
 
+    def test_start_page_applies_to_other_browsers_and_falls_back_when_missing(self):
+        p = self.page
+        p.locator('#settings-open').click()
+        chooser = p.get_by_role('combobox', name='Start page', exact=True)
+        expect(chooser).to_have_value('Home')
+        chooser.select_option('Games/Completed games')
+        p.get_by_role('button', name='Save start page', exact=True).click()
+        expect(p.locator('#start-page-status')).to_have_text('Start page saved.')
+        other = self.browser.new_context()
+        try:
+            page = other.new_page()
+            page.goto(self.url)
+            expect(page.locator('#page-title')).to_have_text('Completed games')
+            page.goto(self.url + '/Home')
+            expect(page.locator('#content')).to_contain_text('Welcome to Homewiki')
+            saved = self.store.read('Games/Completed games')
+            self.store.delete(saved['path'], saved['revision'])
+            page.goto(self.url)
+            expect(page.locator('#content')).to_contain_text('Welcome to Homewiki')
+            page.goto(self.url + '/settings')
+            expect(page.locator('#start-page-status')).to_contain_text('This page is missing')
+        finally:
+            other.close()
+
     def test_appearance_markdown_and_mobile(self):
         p=self.page
         # Escaping and links: raw HTML and script URLs must never become active HTML.

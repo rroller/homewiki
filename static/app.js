@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id);
 const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const reservedPageRoots=new Set(['api','uploads','page','recently-edited','settings','bookmarks','bookmarks.js','app.js','visual-editor.js','style.css','favicon.png','favicon.ico']);
 const pageURL = p => (reservedPageRoots.has(p.split('/')[0])?'/page/':'/') + p.split('/').map(encodeURIComponent).join('/');
-const state = {pageOrder:{parents:{},revision:null}, loading:false, recent:false, pages:[], page:null, editing:false, base:null, dirty:false, remote:false};
+const state = {pageOrder:{parents:{},revision:null}, loading:false, recent:false, startPage:'Home', pages:[], page:null, editing:false, base:null, dirty:false, remote:false};
 let tabID;
 try { tabID=sessionStorage.getItem('homewiki:tab'); if(!tabID){tabID=crypto.randomUUID();sessionStorage.setItem('homewiki:tab',tabID);} } catch {tabID=String(Date.now())+Math.random();}
 const draftPrefix = p => 'homewiki:draft:v2:' + encodeURIComponent(p) + ':';
@@ -359,6 +359,62 @@ function navigateRecent(){
   if(innerWidth<721)sidebar(true);window.scrollTo(0,0);
   refreshPages().catch(error=>{if(turn===navigating)notice(error.message);});
 }
+async function refreshStartPage() {
+  const setting = await api('start-page');
+  state.startPage = setting.path;
+}
+
+function startPageDestination() {
+  const paths = state.pages.map(page => page.path);
+  if (paths.includes(state.startPage)) return state.startPage;
+  return paths.includes('Home') ? 'Home' : paths[0] || 'Home';
+}
+
+const startPageForm = $('start-page-form');
+const startPageSelect = $('start-page-choice');
+const startPageSave = startPageForm.querySelector('button');
+
+async function showStartPageSetting() {
+  const status = $('start-page-status');
+  startPageSelect.disabled = startPageSave.disabled = true;
+  status.textContent = '';
+  try {
+    await refreshStartPage();
+    const paths = ['Home', ...state.pages.map(page => page.path).filter(path => path !== 'Home')];
+    const options = paths.map(path => new Option(path === 'Home' ? 'Home (default)' : path, path));
+    if (!paths.includes(state.startPage)) {
+      options.push(new Option(state.startPage + ' (missing)', state.startPage));
+      options.at(-1).disabled = true;
+      status.textContent = 'This page is missing. Opening the wiki takes you to ' + startPageDestination() + '.';
+    }
+    startPageSelect.replaceChildren(...options);
+    startPageSelect.value = state.startPage;
+    startPageSelect.disabled = false;
+  } catch (error) {
+    status.textContent = error.message;
+  }
+}
+
+startPageSelect.onchange = () => {
+  startPageSave.disabled = startPageSelect.value === state.startPage;
+};
+startPageForm.onsubmit = async event => {
+  event.preventDefault();
+  const target = startPageSelect.value;
+  startPageSelect.disabled = startPageSave.disabled = true;
+  const status = $('start-page-status');
+  try {
+    const setting = await api('start-page', {path:target});
+    state.startPage = setting.path;
+    status.textContent = 'Start page saved.';
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    startPageSelect.disabled = false;
+    startPageSave.disabled = startPageSelect.value === state.startPage;
+  }
+};
+
 function navigateSettings(browserTools) {
   leaveBookmarks();
   preserveDraft();
@@ -383,6 +439,8 @@ function navigateSettings(browserTools) {
   if (browserTools) {
     view.replaceChildren();
     renderBookmarkTools(view);
+  } else {
+    showStartPageSetting();
   }
   renderTree();
   if (innerWidth < 721) sidebar(true);
@@ -438,7 +496,7 @@ function route(){
   try{
     const legacyHash=location.hash.startsWith('#/page/');
     if(legacyHash)path=decodeURIComponent(location.hash.slice(7));
-    else path=decodeURIComponent(location.pathname.replace(/^\/page\//,'/').slice(1).replace(/\/+$/,''))||'Home';
+    else path=decodeURIComponent(location.pathname.replace(/^\/page\//,'/').slice(1).replace(/\/+$/,''))||startPageDestination();
     const canonical=pageURL(path);
     if(legacyHash||(location.pathname!=='/'&&location.pathname!==canonical))history.replaceState(null,'',canonical+location.search+(legacyHash?'':location.hash));
   }catch{toast('Invalid page link');}
@@ -834,7 +892,7 @@ async function checkUpdates(){
   finally{checking=false;}
 }
 window.addEventListener('focus',checkUpdates);setInterval(checkUpdates,10000);
-refreshPages().then(route).catch(error=>notice('Unable to connect to Homewiki: '+error.message));
+Promise.all([refreshPages(), refreshStartPage().catch(() => {})]).then(route).catch(error=>notice('Unable to connect to Homewiki: '+error.message));
 
 
 // Independent of page loading, so a missing version never blocks the wiki.

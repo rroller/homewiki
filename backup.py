@@ -25,7 +25,8 @@ BOOKMARK_DB = 'bookmarks.sqlite3'
 PREVIOUS = '.before-restore.zip'
 TRANSACTION = '.restore-transaction'
 DIRECTORIES = ('pages', 'uploads', '.trash', '.history')
-LIVE_NAMES = (*DIRECTORIES, '.sidebar-order.json', '.initialized', BOOKMARK_DB,
+START_PAGE_FILE = '.start-page'
+LIVE_NAMES = (*DIRECTORIES, '.sidebar-order.json', START_PAGE_FILE, '.initialized', BOOKMARK_DB,
               BOOKMARK_DB + '-journal', BOOKMARK_DB + '-wal', BOOKMARK_DB + '-shm')
 BOOKMARK_FIELDS = ('id', 'url', 'title', 'domain', 'tags', 'page_text', 'extraction_status',
                    'extraction_error', 'extracted_at', 'created_at', 'updated_at', 'revision')
@@ -55,7 +56,7 @@ def managed_member(name):
     if (len(name) > 1024 or any(not p or p in ('.', '..') or
                                any(c in '\\:' or ord(c) < 32 for c in p) for p in parts)):
         return False
-    if name in ('.sidebar-order.json', BOOKMARKS):
+    if name in ('.sidebar-order.json', START_PAGE_FILE, BOOKMARKS):
         return True
     if parts[0] == 'pages':
         page = parts[1:]
@@ -141,7 +142,7 @@ class BackupManager:
         total = 0
         with zipfile.ZipFile(output, 'w', compression=zipfile.ZIP_DEFLATED, strict_timestamps=False) as archive:
             candidates = (path for directory in DIRECTORIES for path in (self.root / directory).rglob('*'))
-            for path in chain(candidates, (self.root / '.sidebar-order.json',)):
+            for path in chain(candidates, (self.root / '.sidebar-order.json', self.root / START_PAGE_FILE)):
                 name = path.relative_to(self.root).as_posix()
                 if not managed_member(name) or not path.is_file():
                     continue
@@ -217,6 +218,11 @@ class BackupManager:
 
     def validate_metadata(self, stage, files):
         for name in files:
+            if name == START_PAGE_FILE:
+                with (stage / name).open(encoding='utf-8') as setting:
+                    target = setting.read(401)
+                if not managed_member('pages/' + target + '.md'):
+                    raise invalid()
             if name == '.sidebar-order.json':
                 value = json.loads((stage / name).read_text(encoding='utf-8'))
                 parents = value['parents']
